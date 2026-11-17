@@ -108,6 +108,8 @@ def test_reason_text():
     assert order_codes(["sharp", "eyes_closed", "sharp"]) == ["eyes_closed", "sharp"]
     assert one_line(["well_exposed", "out_of_focus"]) == "Subject out of focus, well exposed"
     assert describe([]) == ("No issues found", None)
+    assert describe(["underexposed", "sharp"], label="KEEP") == ("Sharp", "Underexposed")
+    assert describe(["underexposed", "sharp"], label="REVIEW") == ("Underexposed", "Sharp")
 
 
 # ---------------------------------------------------------------- personal model blending
@@ -179,3 +181,36 @@ def test_rank_burst_prefers_open_eyes_then_sharpness():
         {"photo_id": 4, "main_eyes_closed": 0, "subject_sharpness": 400, "exposure_score": 1.0, "eyes_closed_count": 2},
     ])
     assert order == [3, 2, 4, 1]
+
+
+# ---------------------------------------------------------------- embedders
+def test_fallback_embedder_groups_near_duplicates():
+    from PIL import Image
+
+    from culler.similarity.embeddings import FallbackEmbedder, from_blob, to_blob
+    from culler.synth import _scene, _shift
+
+    rng = np.random.default_rng(5)
+    a, b = _scene(rng, 480, 320, True), _scene(rng, 480, 320, False)
+    vecs = FallbackEmbedder().embed([Image.fromarray(x) for x in (a, _shift(a, 3, -2), b)])
+    assert vecs.shape == (3, 512) and np.allclose(np.linalg.norm(vecs, axis=1), 1.0, atol=1e-5)
+    assert float(vecs[0] @ vecs[1]) > 0.93 > float(vecs[0] @ vecs[2])
+    assert np.allclose(from_blob(to_blob(vecs[0])), vecs[0], atol=1e-3)
+    assert FallbackEmbedder().embed([]).shape == (0, 512)
+
+
+def test_clip_embedder_runs_when_torch_is_installed():
+    """Weights are random here (no download in tests); this checks the code path and shapes."""
+    import pytest
+
+    pytest.importorskip("torch")
+    pytest.importorskip("open_clip")
+    from PIL import Image
+
+    from culler.similarity.embeddings import ClipEmbedder
+
+    emb = ClipEmbedder("ViT-B-32", pretrained=None)
+    vecs = emb.embed([Image.new("RGB", (640, 427), (200, 50, 50)), Image.new("L", (300, 300), 90)])
+    assert vecs.shape == (2, emb.dim) and emb.dim == 512
+    assert np.allclose(np.linalg.norm(vecs, axis=1), 1.0, atol=1e-4)
+    assert emb.name == "clip-ViT-B-32-random"

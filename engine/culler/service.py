@@ -318,7 +318,7 @@ class Engine:
         def to_rows(results, version):
             out = []
             for f, rule in results:
-                primary, secondary = describe(f.codes, rule.burst_size)
+                primary, secondary = describe(f.codes, rule.burst_size, f.label)
                 out.append({
                     "photo_id": f.photo_id, "rule_score": f.rule_score, "personal_score": f.personal_score,
                     "final_score": f.final_score, "label": f.label, "confidence": f.confidence,

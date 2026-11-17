@@ -31,6 +31,7 @@ REASONS: dict[str, str] = {
 }
 
 HARD = {"blank_frame", "eyes_closed", "camera_shake", "missed_focus", "out_of_focus", "face_blown"}
+POSITIVE = {"best_of_burst", "taste_keep", "sharp", "eyes_open", "well_exposed", "you_keep_similar"}
 _ORDER = {code: i for i, code in enumerate(REASONS)}
 
 # Reason chips the photographer can attach to a reject (also the labels for training notes).
@@ -45,9 +46,15 @@ def order_codes(codes: list[str]) -> list[str]:
     return seen
 
 
-def describe(codes: list[str], burst_size: int = 1) -> tuple[str, str | None]:
-    """Return (primary, secondary) reason text for an ordered list of codes."""
+def describe(codes: list[str], burst_size: int = 1, label: str | None = None) -> tuple[str, str | None]:
+    """Return (primary, secondary) reason text.
+
+    Problems lead, except for a KEEP, where the reason to keep leads and any caveat follows
+    ("Sharp, underexposed" rather than "Underexposed, sharp").
+    """
     ordered = order_codes(codes)
+    if label == "KEEP":
+        ordered = [c for c in ordered if c in POSITIVE] + [c for c in ordered if c not in POSITIVE]
     texts = []
     for c in ordered:
         text = REASONS.get(c, c)
@@ -59,6 +66,6 @@ def describe(codes: list[str], burst_size: int = 1) -> tuple[str, str | None]:
     return texts[0], (texts[1] if len(texts) > 1 else None)
 
 
-def one_line(codes: list[str], burst_size: int = 1) -> str:
-    primary, secondary = describe(codes, burst_size)
+def one_line(codes: list[str], burst_size: int = 1, label: str | None = None) -> str:
+    primary, secondary = describe(codes, burst_size, label)
     return primary if not secondary else f"{primary}, {secondary[0].lower()}{secondary[1:]}"
