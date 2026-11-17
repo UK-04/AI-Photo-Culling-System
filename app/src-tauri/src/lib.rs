@@ -2,7 +2,8 @@
 //!   1. starts the Python engine (a bundled sidecar binary) on a free local port with a
 //!      one-time token, and stops it when the app quits;
 //!   2. tells the web UI where the engine is (`engine_info`);
-//!   3. provides the native menu and forwards its items to the UI as "menu" events.
+//!   3. provides the native menu and forwards its items to the UI as "menu" events;
+//!   4. hosts the updater and process plugins the UI uses to update the app in place.
 
 use std::net::TcpListener;
 use std::sync::Mutex;
@@ -101,6 +102,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     let app_menu = SubmenuBuilder::new(app, "Culler")
         .about(None)
+        .item(&item("check_updates", "Check for Updates…", None)?)
         .separator()
         .services()
         .separator()
@@ -152,6 +154,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        // Self-update: the UI checks GitHub Releases for a newer signed build, installs it and restarts.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(EngineState::default())
         .invoke_handler(tauri::generate_handler![engine_info])
         .setup(|app| {

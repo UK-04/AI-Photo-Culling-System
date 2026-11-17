@@ -10,6 +10,7 @@ import { Loupe } from "./components/Loupe";
 import { ShortcutsDialog } from "./components/ShortcutsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { Toolbar } from "./components/Toolbar";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { Welcome } from "./components/Welcome";
 import { stepZoomLevel } from "./logic";
 import { useStore } from "./store";
@@ -96,6 +97,7 @@ function useNativeMenu() {
           case "redo": s.redo(); break;
           case "rescan": void s.rescan(); break;
           case "shortcuts": s.set({ dialog: "shortcuts" }); break;
+          case "check_updates": void s.checkUpdates(true); break;
           case "toggle_inspector": s.set({ inspectorOpen: !s.inspectorOpen }); break;
         }
       });
@@ -133,6 +135,7 @@ export function App() {
     <div className={`app${isTauri ? " in-shell" : ""}`}>
       <Sidebar />
       <main className="main">
+        <UpdateBanner />
         {shootId === null ? (
           <Welcome />
         ) : (

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "./api";
 import { burstFrames, nextNeedingReview, visiblePhotos } from "./logic";
+import { checkForUpdate, type AvailableUpdate } from "./updater";
 import type { Filter, ModelStatus, Photo, Progress, Shoot, Sort, UserLabel, View } from "./types";
 
 interface Change {
@@ -31,6 +32,7 @@ interface State {
   columns: number;
   dialog: null | "export" | "shortcuts";
   toast: string | null;
+  update: { version: string; notes: string; state: "available" | "installing" | "failed"; progress: number | null; error?: string } | null;
   hud: { text: string; tone: "keep" | "reject" | "plain"; n: number } | null;
   model: ModelStatus | null;
   undoStack: Change[][];
@@ -53,6 +55,8 @@ interface State {
   toggleBurst(burstId?: number): void;
   rotate(degrees: 90 | -90): Promise<void>;
   setZoomLevel(level: string): void;
+  checkUpdates(announce?: boolean): Promise<void>;
+  installUpdate(): Promise<void>;
   setCategory(category: string | null): void;
   setShootType(shootType: string): Promise<void>;
   jumpToNextReview(): void;
@@ -67,6 +71,7 @@ interface State {
 }
 
 let stopWatching: (() => void) | null = null;
+let pendingUpdate: AvailableUpdate | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let refillTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -92,6 +97,7 @@ export const useStore = create<State>((set, get) => ({
   columns: 5,
   dialog: null,
   toast: null,
+  update: null,
   hud: null,
   model: null,
   undoStack: [],
@@ -116,6 +122,7 @@ export const useStore = create<State>((set, get) => ({
       set({ connected: true });
       await get().refreshShoots();
       void get().refreshModel();
+      void get().checkUpdates();
       void api.info().then((info) => set({ shootTypes: info.shoot_types })).catch(() => undefined);
       const last = Number(localStorage.getItem("culler-last-shoot"));
       const shoots = get().shoots;
@@ -293,6 +300,28 @@ export const useStore = create<State>((set, get) => ({
       }
     } catch (err) {
       get().notify((err as Error).message);
+    }
+  },
+
+  async checkUpdates(announce = false) {
+    try {
+      pendingUpdate = await checkForUpdate();
+      if (pendingUpdate) set({ update: { version: pendingUpdate.version, notes: pendingUpdate.notes, state: "available", progress: null } });
+      else if (announce) get().notify("Culler is up to date.");
+    } catch (err) {
+      // Being offline is normal: only say something when the photographer asked.
+      if (announce) get().notify(`Could not check for updates: ${(err as Error).message ?? err}`);
+    }
+  },
+
+  async installUpdate() {
+    const current = get().update;
+    if (!pendingUpdate || !current || current.state === "installing") return;
+    set({ update: { ...current, state: "installing", progress: null } });
+    try {
+      await pendingUpdate.install((progress) => set({ update: { ...get().update!, state: "installing", progress } }));
+    } catch (err) {
+      set({ update: { ...current, state: "failed", progress: null, error: String((err as Error).message ?? err) } });
     }
   },
 

@@ -1,0 +1,101 @@
+# Builds Culler on a Mac and publishes it so installed copies can update themselves.
+#
+# How a new version ships:
+#   1. Raise "version" in app/src-tauri/tauri.conf.json and describe it in app/release-notes.txt.
+#   2. Merge to main.
+# This workflow then builds the app, checks that it starts, and publishes a GitHub release.
+# Every installed Culler sees it the next time it opens and offers to update.
+#
+# On a pull request the same build and checks run, but nothing is published.
+#
+# Needs one repository secret: TAURI_SIGNING_PRIVATE_KEY (the update-signing key).
+name: Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - app/src-tauri/tauri.conf.json
+  pull_request:
+    paths:
+      - app/**
+      - engine/**
+      - scripts/**
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PUBLISH: ${{ github.event_name != 'pull_request' }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: version
+        run: |
+          VERSION="$(node -p "require('./app/src-tauri/tauri.conf.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$PUBLISH" == "true" ]] && gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Version $VERSION is already released. Raise the version to ship a new one."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$PUBLISH" == "true" && -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo "::error::The TAURI_SIGNING_PRIVATE_KEY secret is missing. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.version.outputs.skip != 'true'
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.skip != 'true'
+        with: { node-version: 22 }
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.version.outputs.skip != 'true'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.version.outputs.skip != 'true'
+        with: { workspaces: app/src-tauri }
+
+      - name: Build the engine (and check that it works)
+        if: steps.version.outputs.skip != 'true'
+        run: ./scripts/build_engine.sh
+
+      - name: Build the app
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          if [[ -n "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            ./scripts/build_app.sh --config src-tauri/tauri.release.conf.json
+          else
+            echo "No signing key available here: building without update packages."
+            ./scripts/build_app.sh
+          fi
+
+      - name: Check that the built app starts its engine
+        if: steps.version.outputs.skip != 'true'
+        run: ./scripts/smoke_test_app.sh "${{ steps.version.outputs.version }}"
+
+      - name: Publish the release
+        if: steps.version.outputs.skip != 'true' && env.PUBLISH == 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BUNDLE="app/src-tauri/target/aarch64-apple-darwin/release/bundle"
+          OUT="$RUNNER_TEMP/release" && mkdir -p "$OUT"
+          cp "$BUNDLE/macos/Culler.app.tar.gz" "$BUNDLE/macos/Culler.app.tar.gz.sig" "$OUT/"
+          cp "$BUNDLE"/dmg/*.dmg "$OUT/Culler-$VERSION-mac.dmg"
+          node scripts/make_latest_json.mjs "$VERSION" "$OUT/Culler.app.tar.gz.sig" \
+            "https://github.com/${{ github.repository }}/releases/download/v$VERSION/Culler.app.tar.gz" \
+            app/release-notes.txt > "$OUT/latest.json"
+          cat "$OUT/latest.json"
+          gh release create "v$VERSION" "$OUT"/* --title "Culler $VERSION" --notes-file app/release-notes.txt --target "$GITHUB_SHA"

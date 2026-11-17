@@ -28,7 +28,7 @@ LAUNCH
 chmod +x "$BIN/culler-engine-$TRIPLE"
 # Prove the packaged engine really starts before anything is built on top of it.
 "$ROOT/engine/dist/culler-engine/culler-engine" --version
-"$ROOT/engine/dist/culler-engine/culler-engine" status --data-dir "$(mktemp -d)" >/dev/null
+"$ROOT/engine/dist/culler-engine/culler-engine" selftest --vision
 source "$ROOT/scripts/engine_signature.sh"
 engine_signature "$ROOT" > "$BIN/.engine-signature"   # lets update.sh skip this step when nothing changed
 echo "Engine built and starts correctly: $BIN/culler-engine-$TRIPLE"

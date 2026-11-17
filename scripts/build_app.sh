@@ -28,5 +28,6 @@ fi
 
 cd "$ROOT/app"
 npm ci
-npm run tauri build -- --target aarch64-apple-darwin
+# Extra arguments are passed to "tauri build" (the release workflow adds its signing config).
+npm run tauri build -- --target aarch64-apple-darwin "$@"
 echo "Built: $ROOT/app/src-tauri/target/aarch64-apple-darwin/release/bundle/"

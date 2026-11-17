@@ -5,6 +5,7 @@
     culler export   <folder> --xmp | --copy-to DIR | --csv FILE [--selection keep]
     culler train    [--force]
     culler status
+    culler selftest [--vision]
     culler serve    [--port 8765] [--token T] [--ui app/dist]
 
 Everything the desktop app does goes through the same code, so the engine can be
@@ -151,6 +152,60 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_selftest(args: argparse.Namespace) -> int:
+    """Prove this build works end to end: scan a generated shoot with worker processes,
+    check the results, and check that the vision model's libraries load.
+
+    Run by the build scripts against the packaged engine, where missing libraries and
+    broken multiprocessing are the usual failures and unit tests cannot see them.
+    """
+    import tempfile
+
+    from .service import Engine
+    from .synth import make_shoot
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp) / "shoot"
+        truth = make_shoot(folder, scenes=14, seed=4, size=(480, 320), corrupt_files=1, defect_share=0.5)
+        settings = load_settings(None, data_dir=str(Path(tmp) / "data"), embedder="fallback", workers=2)
+        engine = Engine(settings)
+        shoot_id = engine.repo.add_shoot(str(folder))
+        result = engine.scan(shoot_id)  # the worker-pool path, as the app uses it
+        rows = {r["name"]: r for r in engine.repo.grid(shoot_id)}
+        problems = []
+        if result.stage != "done":
+            problems.append(f"scan ended as {result.stage}: {result.message}")
+        if len(rows) != len(truth) + 1:
+            problems.append(f"expected {len(truth) + 1} photos, found {len(rows)}")
+        for p in truth:
+            row = rows.get(p.file)
+            if row is None or row["label"] is None:
+                problems.append(f"{p.file} was not scored")
+            elif p.defect in ("blur", "shake", "black") and row["label"] != "REJECT":
+                problems.append(f"{p.file} ({p.defect}) was labelled {row['label']}")
+        if not all(r.get("category") for r in rows.values() if r["status"] == "done"):
+            problems.append("some photos have no topic category")
+        print(f"scan: {len(rows)} photos, faces: {engine.face_backend_name}, {len(problems)} problems")
+
+    if args.vision:
+        import numpy as np
+        from PIL import Image
+
+        from .similarity.embeddings import ClipEmbedder
+
+        emb = ClipEmbedder(settings.clip_model, pretrained=None)  # random weights: loads the libraries, no download
+        vecs = emb.embed([Image.new("RGB", (320, 240), (120, 60, 30))])
+        text = emb.embed_text(["a group photo of several people"])
+        if vecs.shape != (1, emb.dim) or text.shape != (1, emb.dim) or not np.isfinite(vecs).all():
+            problems.append("the vision model produced malformed output")
+        print(f"vision model libraries: ok ({emb.device})")
+
+    for problem in problems:
+        print("FAILED:", problem, file=sys.stderr)
+    print("selftest passed" if not problems else "selftest FAILED")
+    return 1 if problems else 0
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -241,6 +296,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("status", parents=[common], help="show shoots and model status")
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("selftest", help="check that this build of the engine works")
+    p.add_argument("--vision", action="store_true", help="also load the vision model's libraries")
+    p.set_defaults(func=cmd_selftest)
 
     p = sub.add_parser("serve", parents=[common], help="run the local API for the desktop app")
     p.add_argument("--port", type=int, default=0, help="port on 127.0.0.1 (default: any free port)")
