@@ -92,6 +92,9 @@ class NullBackend:
     def detect(self, rgb: np.ndarray) -> list[Face]:
         return []
 
+    def boxes(self, rgb: np.ndarray) -> list[Face]:
+        return []
+
 
 class YuNetBackend:
     """Face boxes from OpenCV's YuNet. Does not measure eyes."""
@@ -134,6 +137,8 @@ class YuNetBackend:
             if w > 4 and h > 4:
                 faces.append(Face(box=(x, y, w, h), score=float(row[-1])))
         return faces
+
+    boxes = detect  # face boxes only; this backend never measures eyes
 
 
 class LandmarkEyes:
@@ -181,6 +186,10 @@ class FacePipeline:
         self._detector, self._eyes = detector, eyes
         self._min_face_px, self._max_eye_faces = min_face_px, max_eye_faces
         self.name = detector.name + ("+landmarks" if eyes is not None else "")
+
+    def boxes(self, rgb: np.ndarray) -> list[Face]:
+        """Face boxes without the (slower) eye measurement."""
+        return self._detector.detect(rgb)
 
     def detect(self, rgb: np.ndarray) -> list[Face]:
         faces = self._detector.detect(rgb)

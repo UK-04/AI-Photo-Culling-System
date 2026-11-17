@@ -9,8 +9,11 @@ const CELL = 196; // target cell width in px
 const GAP = 10;
 
 export function Grid() {
-  const { photos, filter, sort, expanded, teachIds, selectedId, progress } = useStore();
-  const list = useMemo(() => visiblePhotos(photos, filter, sort, expanded, teachIds), [photos, filter, sort, expanded, teachIds]);
+  const { photos, filter, sort, expanded, teachIds, selectedId, progress, category } = useStore();
+  const list = useMemo(
+    () => visiblePhotos(photos, filter, sort, expanded, teachIds, category),
+    [photos, filter, sort, expanded, teachIds, category],
+  );
   const scroller = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
 
@@ -97,7 +100,16 @@ const Cell = memo(function Cell({ photo, size, selected, stacked }: { photo: Pho
           <img src={imageUrl(photo, "thumb")} alt="" loading="lazy" decoding="async" draggable={false} />
         )}
         {photo.burst_size > 1 && (
-          <span className="badge badge-burst" title={stacked ? `Burst of ${photo.burst_size}. Press S to open.` : `Frame ${(photo.burst_rank ?? 0) + 1} of ${photo.burst_size}`}>
+          <span
+            className="badge badge-burst"
+            role="button"
+            title={stacked ? `Show all ${photo.burst_size} photos in this group (S)` : `Photo ${(photo.burst_rank ?? 0) + 1} of ${photo.burst_size}. Click to close the group (S)`}
+            onClick={(e) => {
+              e.stopPropagation();
+              useStore.getState().toggleBurst(photo.burst_id!);
+            }}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
             {stacked ? photo.burst_size : `${(photo.burst_rank ?? 0) + 1}/${photo.burst_size}`}
           </span>
         )}

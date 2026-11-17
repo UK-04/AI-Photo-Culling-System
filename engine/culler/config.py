@@ -16,7 +16,7 @@ from pathlib import Path
 APP_NAME = "Culler"
 
 # Bump when an analyzer changes in a way that makes old rows stale.
-ANALYZER_VERSION = 1
+ANALYZER_VERSION = 2  # v2: auto-rotation; analysis runs on the rotated image
 
 RAW_EXTS = frozenset({".cr3", ".cr2", ".nef", ".arw", ".raf", ".dng"})
 IMAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".heic", ".heif"})
@@ -101,8 +101,9 @@ class Settings:
     analysis_px: int = 1024
     workers: int = 0  # 0 = pick from CPU count
     embedder: str = "auto"  # auto | clip | fallback
-    clip_model: str = "ViT-B-32"
-    clip_pretrained: str = "laion2b_s34b_b79k"
+    # The weights the topic sorting was checked with. They can be fetched from two hosts.
+    clip_model: str = "ViT-B-32-quickgelu"
+    clip_pretrained: str = "laion400m_e32"
     weights: Weights = field(default_factory=Weights)
     thresholds: Thresholds = field(default_factory=Thresholds)
     learning: Learning = field(default_factory=Learning)

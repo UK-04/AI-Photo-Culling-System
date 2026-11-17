@@ -112,6 +112,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
         .build()?;
     let file = SubmenuBuilder::new(app, "File")
         .item(&item("open_folder", "Open Folder…", Some("CmdOrCtrl+O"))?)
+        .item(&item("open_photos", "Select Photos…", Some("CmdOrCtrl+Shift+O"))?)
         .item(&item("rescan", "Rescan Folder", Some("CmdOrCtrl+R"))?)
         .separator()
         .item(&item("export", "Export…", Some("CmdOrCtrl+E"))?)

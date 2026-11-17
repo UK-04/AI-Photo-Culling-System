@@ -160,3 +160,68 @@ def test_remove_shoot_hides_it_but_keeps_decisions(client, scanned, engine):
     assert client.delete(f"/shoots/{shoot_id}", headers=AUTH).json() == {"ok": True}
     assert client.get("/shoots", headers=AUTH).json() == []
     assert engine.repo.labeled_count() == 1
+
+
+# ---------------------------------------------------------------- Finder dialogs and hand-picked photos
+def test_select_photos_makes_a_shoot_of_only_those_files(client, shoot, tmp_path):
+    folder, truth = shoot
+    picked = [str(folder / truth[i].file) for i in (0, 1, 2)]
+    notes = tmp_path / "notes.txt"
+    notes.write_text("not a photo")
+    made = client.post("/shoots", json={"files": picked + [str(notes)]}, headers=AUTH).json()
+    assert made["folder_path"] == str(folder.resolve()) and made["skipped"] == 1
+    client.post(f"/shoots/{made['id']}/scan", headers=AUTH)
+    assert _wait_done(client, made["id"])["stage"] == "done"
+    names = lambda: sorted(p["name"] for p in client.get(f"/shoots/{made['id']}/photos", headers=AUTH).json()["photos"])  # noqa: E731
+    assert names() == sorted(truth[i].file for i in (0, 1, 2))
+
+    # picking more photos later adds to the same shoot
+    again = client.post("/shoots", json={"files": [str(folder / truth[3].file)]}, headers=AUTH).json()
+    assert again["id"] == made["id"]
+    client.post(f"/shoots/{made['id']}/scan", headers=AUTH)
+    _wait_done(client, made["id"])
+    assert len(names()) == 4
+
+    # opening the folder itself turns it into the whole folder
+    client.post("/shoots", json={"folder_path": str(folder)}, headers=AUTH)
+    client.post(f"/shoots/{made['id']}/scan", headers=AUTH)
+    _wait_done(client, made["id"])
+    assert len(names()) == len(truth) + 1
+
+    assert client.post("/shoots", json={"files": [str(notes)]}, headers=AUTH).status_code == 400
+    assert client.post("/shoots", json={}, headers=AUTH).status_code == 400
+
+
+def test_finder_dialogs(client, monkeypatch):
+    from culler import native
+
+    # not on a Mac: the UI is told so and falls back to a typed path
+    monkeypatch.setattr(native, "available", lambda: False)
+    assert client.post("/dialog/folder", headers=AUTH).status_code == 501
+    assert client.post("/dialog/folder").status_code == 401
+
+    calls = []
+
+    class Done:
+        def __init__(self, code, out="", err=""):
+            self.returncode, self.stdout, self.stderr = code, out, err
+
+    def fake_run(args, **kw):
+        calls.append(args)
+        script = " ".join(args)
+        if "choose folder" in script:
+            return Done(0, "/Users/me/Pictures/Smith Wedding/\n")
+        return Done(0, "/Users/me/a.CR3\n/Users/me/b c.jpg\n")
+
+    monkeypatch.setattr(native, "available", lambda: True)
+    monkeypatch.setattr(native.subprocess, "run", fake_run)
+    assert client.post("/dialog/folder", headers=AUTH).json() == {"path": "/Users/me/Pictures/Smith Wedding"}
+    assert client.post("/dialog/files", headers=AUTH).json() == {"paths": ["/Users/me/a.CR3", "/Users/me/b c.jpg"]}
+    assert calls[0][0] == "osascript" and "multiple selections allowed" in " ".join(calls[1])
+
+    # the user pressed Cancel
+    monkeypatch.setattr(native.subprocess, "run", lambda args, **kw: Done(1, "", "execution error: User canceled. (-128)"))
+    assert client.post("/dialog/folder", headers=AUTH).json() == {"path": None}
+    assert client.post("/dialog/files", headers=AUTH).json() == {"paths": []}
+    monkeypatch.setattr(native.subprocess, "run", lambda args, **kw: Done(1, "", "something broke"))
+    assert client.post("/dialog/folder", headers=AUTH).status_code == 500

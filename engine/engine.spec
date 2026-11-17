@@ -9,7 +9,7 @@ for package in ("mediapipe", "open_clip", "rawpy", "pillow_heif", "xxhash"):
     datas += d; binaries += b; hiddenimports += h
 datas += collect_data_files("sklearn")
 
-a = Analysis(["culler/__main__.py"], pathex=["."], binaries=binaries, datas=datas, hiddenimports=hiddenimports,
+a = Analysis(["run_engine.py"], pathex=["."], binaries=binaries, datas=datas, hiddenimports=hiddenimports,
              excludes=["tkinter", "matplotlib", "IPython", "pytest", "torchaudio"], noarchive=False)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="culler-engine", console=True, target_arch="arm64",

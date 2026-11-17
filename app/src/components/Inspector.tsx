@@ -19,7 +19,7 @@ function Meter({ name, value, hint }: { name: string; value: number | null | und
 }
 
 export function Inspector() {
-  const { photos, selectedId, decide } = useStore();
+  const { photos, selectedId, decide, rotate } = useStore();
   const photo = photos.find((p) => p.id === selectedId);
   const [detail, setDetail] = useState<PhotoDetail | null>(null);
 
@@ -74,6 +74,10 @@ export function Inspector() {
             </button>
           ))}
         </div>
+        <div className="actions rotate-actions">
+          <button className="button" onClick={() => void rotate(-90)} disabled={photo.status !== "done"} title="Rotate left ([)">↺ Rotate left</button>
+          <button className="button" onClick={() => void rotate(90)} disabled={photo.status !== "done"} title="Rotate right (])">Rotate right ↻</button>
+        </div>
         {photo.user_label === "REJECT" && (
           <div className="chips">
             <span className="muted small">Why? It helps Culler learn.</span>
@@ -110,6 +114,32 @@ export function Inspector() {
               <dd>{detail.clip_low_pct !== null ? `${detail.clip_low_pct.toFixed(1)}% clipped` : "–"}</dd>
             </dl>
           )}
+        </section>
+      )}
+
+      {photo.status === "done" && photo.recover_score !== null && (
+        <section>
+          <h2>Editing</h2>
+          {photo.recover_score >= 1 ? (
+            <p className="muted">Nothing needs fixing.</p>
+          ) : (
+            <>
+              <p className="recover-label">{photo.recover_label}</p>
+              <Meter name="Recoverable" value={photo.recover_score} hint="An estimate of how well editing can fix this photo's problems" />
+              <p className="muted small">{photo.recover_note}</p>
+            </>
+          )}
+        </section>
+      )}
+
+      {photo.status === "done" && photo.category && (
+        <section>
+          <h2>Topic</h2>
+          <p className="recover-label">{photo.category}</p>
+          {photo.relevance !== null && (
+            <Meter name="Relevance" value={photo.relevance} hint="How much this photo belongs with the rest of the shoot. 100 means the shoot is full of photos like it." />
+          )}
+          {photo.off_topic ? <p className="muted small">Unlike the rest of this shoot.</p> : null}
         </section>
       )}
 

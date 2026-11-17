@@ -111,3 +111,24 @@ def copy_photos(
         except OSError as exc:
             report.failed.append(f"{src.name}: {exc}")
     return report
+
+
+def _folder_name(category: str | None) -> str:
+    name = (category or "Uncategorized").replace("/", "-").replace(":", "-").strip(" .")
+    return name or "Uncategorized"
+
+
+def copy_by_category(rows: list[dict], dest_dir: str | os.PathLike, **kwargs) -> dict:
+    """Copy photos into ``dest_dir/<category>/``. Returns the combined report plus a count per folder."""
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        groups.setdefault(_folder_name(row.get("category")), []).append(row)
+    total = CopyReport(dest=str(Path(dest_dir).expanduser()))
+    folders: dict[str, int] = {}
+    for name, members in sorted(groups.items()):
+        report = copy_photos(members, Path(dest_dir).expanduser() / name, **kwargs)
+        folders[name] = report.copied + report.already_there
+        for key in ("copied", "already_there", "skipped_missing", "ratings_embedded"):
+            setattr(total, key, getattr(total, key) + getattr(report, key))
+        total.failed += report.failed
+    return {**total.to_dict(), "folders": folders}

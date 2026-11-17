@@ -31,19 +31,23 @@ from PIL import Image
 
 from .analysis.exposure import exposure_score
 from .analysis.faces import build_face_backend
+from .analysis.orientation import detect_rotation, rotate_cw
 from .analysis.pipeline import analyze_image
-from .config import ANALYZER_VERSION, Settings
+from .config import ANALYZER_VERSION, RAW_EXTS, Settings
 from .db import Repo
 from .io.discover import find_photos
 from .io.hashing import file_hash
 from .io.loader import PhotoLoadError, load_photo
-from .io.thumbs import cache_path, write_cache
+from .io.thumbs import cache_path, ensure_rotated, rotate_image, rotated_path, write_cache
 from .learning.predict import predict_keep
 from .learning.train import TrainResult, train_model
 from .scoring.reasons import describe
+from .scoring.recover import assess
 from .scoring.rules import PhotoSignals, finalize, score_shoot
 from .similarity.bursts import Frame, group_bursts, rank_burst
 from .similarity.embeddings import Embedder, FallbackEmbedder, build_embedder, from_blob, to_blob
+from .topics.categorize import categorize_by_faces, categorize_by_vision, relevance
+from .topics.taxonomy import SHOOT_TYPES
 
 # ----------------------------------------------------------------------------- worker side
 _worker: dict[str, Any] = {}
@@ -69,9 +73,17 @@ def process_photo(task: dict) -> dict:
         loaded = load_photo(path, settings.preview_px, task.get("companion"))
         write_cache(settings.cache_dir, digest, loaded.image, settings.thumb_px)
         rgb = np.asarray(loaded.image)
+        # A rotation the photographer set wins; otherwise look for sideways faces.
+        user_rotation = task.get("rotation")
+        rotation = user_rotation if user_rotation is not None else detect_rotation(rgb, _worker["faces"])
+        if rotation:
+            rgb = rotate_cw(rgb, rotation)
+            for kind in ("thumb", "preview"):
+                ensure_rotated(settings.cache_dir, kind, digest, rotation)
         analysis = analyze_image(rgb, _worker["faces"], settings)
         exif = loaded.exif
         meta = {
+            "auto_rotation": None if user_rotation is not None else rotation,
             "file_hash": digest, "file_size": size, "width": loaded.width, "height": loaded.height,
             **{k: exif.get(k) for k in ("captured_at", "capture_ts", "camera", "lens", "iso", "shutter", "aperture", "focal")},
         }
@@ -121,6 +133,7 @@ class Engine:
         self._embedder = embedder
         self._embedder_lock = threading.Lock()
         self._face_backend_name: str | None = None
+        self._faces = None  # face backend for one-off work in this process (manual rotate)
 
     # ---- lazily built models
     @property
@@ -174,6 +187,9 @@ class Engine:
 
             emit("discovering", message="Looking for photos")
             found = find_photos(folder)
+            if shoot.get("only_files"):  # the photographer picked individual photos
+                wanted = set(json.loads(shoot["only_files"]))
+                found = [f for f in found if str(f.path) in wanted or (f.companion and str(f.companion) in wanted)]
             self.repo.sync_photos(shoot_id, [(str(f.path), str(f.companion) if f.companion else None) for f in found])
             check()
 
@@ -183,6 +199,8 @@ class Engine:
             check()
             emit("grouping", done=0, total=0, message="Grouping bursts")
             self._group(shoot_id)
+            emit("grouping", message="Sorting by topic")
+            self.categorize(shoot_id)
             emit("scoring", message="Scoring")
             self.rescore(shoot_id)
 
@@ -205,7 +223,13 @@ class Engine:
         emit("analyzing", done=0, total=len(pending), message="Analyzing photos")
         if not pending:
             return
-        tasks = [{"photo_id": p["id"], "path": p["path"], "companion": p["companion_path"]} for p in pending]
+        tasks = [
+            {
+                "photo_id": p["id"], "path": p["path"], "companion": p["companion_path"],
+                "rotation": p["rotation"] if p["rotation_source"] == "user" else None,
+            }
+            for p in pending
+        ]
         done = errors = 0
 
         def store(result: dict) -> None:
@@ -292,6 +316,47 @@ class Engine:
             ranked.append(rank_burst(candidates))
         self.repo.replace_bursts(shoot_id, ranked)
 
+    # ---- topics
+    def categorize(self, shoot_id: int) -> str:
+        """Sort a shoot's photos into topic categories and measure each one's relevance.
+
+        Uses the vision model when it can read text (CLIP); otherwise falls back to
+        categories based on how many people are in the photo. Returns the method used.
+        No image work: it runs on stored embeddings and face data, so it is quick.
+        """
+        shoot = self.repo.get_shoot(shoot_id)
+        rows = self.repo.analysis_rows(shoot_id)
+        if shoot is None or not rows:
+            return "none"
+        embedder = self.embedder
+        blobs = self.repo.load_embeddings(shoot_id, embedder.name)
+        rows = [r for r in rows if r["photo_id"] in blobs]
+        if not rows:
+            return "none"
+        ids = [r["photo_id"] for r in rows]
+        vectors = np.stack([from_blob(blobs[i]) for i in ids])
+        counts = [int(r["face_count"] or 0) for r in rows]
+        heights = []
+        for r in rows:
+            lead = next((f for f in json.loads(r["faces_json"] or "[]") if f.get("main")), None)
+            heights.append(lead["box_rel"][3] if lead else None)
+
+        shoot_type = shoot.get("shoot_type") or "general"
+        if shoot_type not in SHOOT_TYPES:
+            shoot_type = "general"
+        embed_text = getattr(embedder, "embed_text", None)
+        if embed_text is not None:
+            topics = categorize_by_vision(ids, vectors, counts, shoot_type, embed_text)
+        else:
+            topics = categorize_by_faces(ids, counts, heights)
+        scores, off = relevance(vectors, [r["burst_id"] for r in rows])
+        self.repo.replace_topics(shoot_id, [
+            {"photo_id": t.photo_id, "category": t.category, "confidence": t.confidence,
+             "relevance": s, "off_topic": o, "method": t.method}
+            for t, s, o in zip(topics, scores, off, strict=True)
+        ])
+        return topics[0].method
+
     # ---- scoring
     def rescore(self, shoot_id: int) -> int:
         """Recompute every recommendation for a shoot from stored analysis. Fast; no image work."""
@@ -316,11 +381,16 @@ class Engine:
         rule_results = score_shoot(signals, self.settings)
 
         # Rule scores must be stored before the personal model runs: they are one of its inputs.
+        by_id = {r["photo_id"]: r for r in rows}
+
         def to_rows(results, version):
             out = []
             for f, rule in results:
                 primary, secondary = describe(f.codes, rule.burst_size, f.label)
+                row = by_id[f.photo_id]
+                fix = assess(row, f.codes, Path(row["path"]).suffix.lower() in RAW_EXTS, row["iso"])
                 out.append({
+                    "recover_score": fix.score, "recover_label": fix.label, "recover_note": fix.note,
                     "photo_id": f.photo_id, "rule_score": f.rule_score, "personal_score": f.personal_score,
                     "final_score": f.final_score, "label": f.label, "confidence": f.confidence,
                     "reason_primary": primary, "reason_secondary": secondary,
@@ -366,21 +436,72 @@ class Engine:
 
     # ---- cached images
     def cached_image_path(self, photo_id: int, kind: str) -> Path | None:
-        """Path of the cached thumb/preview for a photo, rebuilding it if the cache was cleared."""
+        """Path of the cached thumb/preview for a photo at its current rotation.
+
+        Rebuilds the cache from the original if it was cleared.
+        """
         photo = self.repo.get_photo(photo_id)
         if photo is None or not photo.get("file_hash"):
             return None
-        path = cache_path(self.settings.cache_dir, kind, photo["file_hash"])
-        if path.exists():
-            return path
-        if not os.path.exists(photo["path"]):
-            return None
+        digest, rotation = photo["file_hash"], photo.get("rotation") or 0
+        base = cache_path(self.settings.cache_dir, kind, digest)
+        if not base.exists():
+            if not os.path.exists(photo["path"]):
+                return None
+            try:
+                loaded = load_photo(photo["path"], self.settings.preview_px, photo.get("companion_path"))
+                write_cache(self.settings.cache_dir, digest, loaded.image, self.settings.thumb_px)
+            except Exception:
+                return None
         try:
-            loaded = load_photo(photo["path"], self.settings.preview_px, photo.get("companion_path"))
-            write_cache(self.settings.cache_dir, photo["file_hash"], loaded.image, self.settings.thumb_px)
+            return ensure_rotated(self.settings.cache_dir, kind, digest, rotation)
         except Exception:
             return None
-        return path if path.exists() else None
+
+    def full_image_path(self, photo_id: int) -> tuple[Path, str] | None:
+        """The photo at full resolution for zooming: ``(path, media type)``.
+
+        An unrotated JPEG or PNG is served straight from the original file. Anything else
+        (RAW, HEIC, or a rotated photo) is rendered once to a JPEG in the cache; for RAW
+        that is the camera's embedded full-size preview.
+        """
+        photo = self.repo.get_photo(photo_id)
+        if photo is None or not photo.get("file_hash") or not os.path.exists(photo["path"]):
+            return None
+        rotation = photo.get("rotation") or 0
+        suffix = Path(photo["path"]).suffix.lower()
+        if rotation == 0 and suffix in (".jpg", ".jpeg", ".png"):
+            return Path(photo["path"]), "image/png" if suffix == ".png" else "image/jpeg"
+        target = rotated_path(self.settings.cache_dir, "full", photo["file_hash"], rotation)
+        if not target.exists():
+            try:
+                loaded = load_photo(photo["path"], 100_000, photo.get("companion_path"))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                tmp = target.with_suffix(f".{os.getpid()}.tmp")
+                rotate_image(loaded.image, rotation).save(tmp, "JPEG", quality=92)
+                os.replace(tmp, target)
+            except Exception:
+                return None
+        return target, "image/jpeg"
+
+    def rotate(self, photo_id: int, degrees_cw: int) -> dict | None:
+        """Turn a photo by hand. Faces and focus are re-measured on the turned image."""
+        photo = self.repo.get_photo(photo_id)
+        if photo is None or photo["status"] != "done":
+            return None
+        rotation = ((photo.get("rotation") or 0) + degrees_cw) % 360
+        self.repo.set_rotation(photo_id, rotation)
+        preview = self.cached_image_path(photo_id, "preview")
+        self.cached_image_path(photo_id, "thumb")
+        if preview is not None:
+            with self._embedder_lock:
+                if self._faces is None:
+                    self._faces = build_face_backend(self.settings)
+            with Image.open(preview) as img:
+                analysis = analyze_image(np.asarray(img.convert("RGB")), self._faces, self.settings)
+            self.repo.update_analysis(photo_id, analysis)
+            self.rescore(photo["shoot_id"])
+        return self.repo.get_photo(photo_id)
 
     def _open_cached(self, photo_id: int, digest: str | None, kind: str) -> Image.Image | None:
         path = self.cached_image_path(photo_id, kind)

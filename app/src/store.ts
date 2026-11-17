@@ -24,10 +24,14 @@ interface State {
   teachIds: Set<number>;
   inspectorOpen: boolean;
   zoomed: boolean;
+  zoomLevel: string;
+  category: string | null;
+  shootTypes: { id: string; name: string }[];
   autoAdvance: boolean;
   columns: number;
   dialog: null | "export" | "shortcuts";
   toast: string | null;
+  hud: { text: string; tone: "keep" | "reject" | "plain"; n: number } | null;
   model: ModelStatus | null;
   undoStack: Change[][];
   redoStack: Change[][];
@@ -35,6 +39,7 @@ interface State {
   init(): Promise<void>;
   refreshShoots(): Promise<void>;
   openFolder(path: string): Promise<void>;
+  openPhotos(files: string[]): Promise<void>;
   selectShoot(id: number): Promise<void>;
   removeShoot(id: number): Promise<void>;
   rescan(): Promise<void>;
@@ -45,7 +50,11 @@ interface State {
   setView(v: View): void;
   select(id: number | null): void;
   move(delta: number): void;
-  toggleBurst(): void;
+  toggleBurst(burstId?: number): void;
+  rotate(degrees: 90 | -90): Promise<void>;
+  setZoomLevel(level: string): void;
+  setCategory(category: string | null): void;
+  setShootType(shootType: string): Promise<void>;
   jumpToNextReview(): void;
   decide(change: { label?: UserLabel; rating?: number }, reason?: string): void;
   undo(): void;
@@ -76,10 +85,14 @@ export const useStore = create<State>((set, get) => ({
   teachIds: new Set(),
   inspectorOpen: true,
   zoomed: false,
+  category: null,
+  shootTypes: [],
+  zoomLevel: localStorage.getItem("culler-zoom-level") ?? "1",
   autoAdvance: localStorage.getItem("culler-auto-advance") !== "off",
   columns: 5,
   dialog: null,
   toast: null,
+  hud: null,
   model: null,
   undoStack: [],
   redoStack: [],
@@ -94,7 +107,7 @@ export const useStore = create<State>((set, get) => ({
 
   visible() {
     const s = get();
-    return visiblePhotos(s.photos, s.filter, s.sort, s.expanded, s.teachIds);
+    return visiblePhotos(s.photos, s.filter, s.sort, s.expanded, s.teachIds, s.category);
   },
 
   async init() {
@@ -103,6 +116,7 @@ export const useStore = create<State>((set, get) => ({
       set({ connected: true });
       await get().refreshShoots();
       void get().refreshModel();
+      void api.info().then((info) => set({ shootTypes: info.shoot_types })).catch(() => undefined);
       const last = Number(localStorage.getItem("culler-last-shoot"));
       const shoots = get().shoots;
       const pick = shoots.find((s) => s.id === last) ?? shoots[0];
@@ -121,7 +135,19 @@ export const useStore = create<State>((set, get) => ({
       const shoot = await api.addShoot(path);
       await get().refreshShoots();
       await get().selectShoot(shoot.id);
-      if (shoot.status !== "ready") await get().rescan();
+      await get().rescan(); // quick when nothing changed; picks up new files
+    } catch (err) {
+      get().notify((err as Error).message);
+    }
+  },
+
+  async openPhotos(files) {
+    try {
+      const shoot = await api.addPhotos(files);
+      await get().refreshShoots();
+      await get().selectShoot(shoot.id);
+      await get().rescan();
+      if (shoot.skipped > 0) get().notify(`${shoot.skipped} file${shoot.skipped === 1 ? " was" : "s were"} skipped: not a photo format Culler reads.`);
     } catch (err) {
       get().notify((err as Error).message);
     }
@@ -132,7 +158,7 @@ export const useStore = create<State>((set, get) => ({
     clearInterval(refillTimer);
     localStorage.setItem("culler-last-shoot", String(id));
     set({
-      shootId: id, photos: [], selectedId: null, filter: "all", view: "grid", expanded: new Set(),
+      shootId: id, photos: [], selectedId: null, filter: "all", category: null, view: "grid", expanded: new Set(),
       teachIds: new Set(), undoStack: [], redoStack: [], progress: null,
     });
     await get().loadPhotos();
@@ -214,26 +240,65 @@ export const useStore = create<State>((set, get) => ({
     if (!list.length) return;
     const index = list.findIndex((p) => p.id === get().selectedId);
     const next = Math.min(list.length - 1, Math.max(0, (index < 0 ? 0 : index) + delta));
-    set({ selectedId: list[next].id, zoomed: false });
+    set({ selectedId: list[next].id });
   },
 
-  toggleBurst() {
+  toggleBurst(burstId) {
     const s = get();
     const current = s.photos.find((p) => p.id === s.selectedId);
-    if (!current || current.burst_id === null) return;
+    const id = burstId ?? current?.burst_id ?? null;
+    if (id === null) return;
     const expanded = new Set(s.expanded);
-    if (expanded.has(current.burst_id)) {
-      expanded.delete(current.burst_id);
+    if (expanded.has(id)) {
+      expanded.delete(id);
       set({ expanded });
       // keep the selection on a cell that is still shown
       const list = get().visible();
-      if (!list.some((p) => p.id === current.id)) {
-        set({ selectedId: list.find((p) => p.burst_id === current.burst_id)?.id ?? list[0]?.id ?? null });
+      if (current && !list.some((p) => p.id === current.id)) {
+        set({ selectedId: list.find((p) => p.burst_id === id)?.id ?? list[0]?.id ?? null });
       }
     } else {
-      expanded.add(current.burst_id);
+      expanded.add(id);
       set({ expanded });
     }
+  },
+
+  async rotate(degrees) {
+    const s = get();
+    const target = s.photos.find((p) => p.id === s.selectedId);
+    if (!target || target.status !== "done") return;
+    try {
+      await api.rotate(target.id, degrees);
+      await get().loadPhotos(); // new size, faces and scores for the turned photo
+    } catch (err) {
+      get().notify(`Could not rotate: ${(err as Error).message}`);
+    }
+  },
+
+  setCategory(category) {
+    set({ category });
+    const list = get().visible();
+    if (!list.some((p) => p.id === get().selectedId)) set({ selectedId: list[0]?.id ?? null });
+  },
+
+  async setShootType(shootType) {
+    const id = get().shootId;
+    if (id === null) return;
+    try {
+      const result = await api.setShootType(id, shootType);
+      set({ category: null });
+      await Promise.all([get().refreshShoots(), get().loadPhotos()]);
+      if (result.method === "faces" && shootType !== "general") {
+        get().notify("The vision model is not loaded, so photos are grouped by how many people are in them.");
+      }
+    } catch (err) {
+      get().notify((err as Error).message);
+    }
+  },
+
+  setZoomLevel(level) {
+    localStorage.setItem("culler-zoom-level", level);
+    set({ zoomLevel: level });
   },
 
   jumpToNextReview() {
@@ -261,10 +326,15 @@ export const useStore = create<State>((set, get) => ({
     const nextId = list[index + 1]?.id ?? null;
 
     apply(set, get, [{ id: target.id, before, after }], "after", reason);
+    const n = (get().hud?.n ?? 0) + 1;
+    if (change.label === "KEEP") set({ hud: { text: "Picked", tone: "keep", n } });
+    else if (change.label === "REJECT") set({ hud: { text: "Rejected", tone: "reject", n } });
+    else if (change.label === null) set({ hud: { text: "Unflagged", tone: "plain", n } });
+    else if (change.rating !== undefined) set({ hud: { text: change.rating ? "★".repeat(change.rating) : "No stars", tone: "plain", n } });
     set({ undoStack: [...get().undoStack, [{ id: target.id, before, after }]].slice(-200), redoStack: [] });
 
     if (change.label !== undefined && change.label !== null && s.autoAdvance && s.view !== "compare" && nextId !== null) {
-      set({ selectedId: nextId, zoomed: false });
+      set({ selectedId: nextId }); // zoom carries over, as it does with the arrow keys
     } else if (!get().visible().some((p) => p.id === target.id)) {
       // the photo left the current filter: move on rather than lose the selection
       set({ selectedId: nextId ?? get().visible()[0]?.id ?? null });

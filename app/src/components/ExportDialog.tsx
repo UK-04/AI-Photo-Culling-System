@@ -19,6 +19,7 @@ export function ExportDialog() {
   const [kind, setKind] = useState<Kind>(hasRaw ? "xmp" : "folder");
   const [selection, setSelection] = useState<Selection>(kind === "folder" ? "keep" : "all");
   const [dest, setDest] = useState("");
+  const [byCategory, setByCategory] = useState(false);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<ExportReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +37,7 @@ export function ExportDialog() {
     setBusy(true);
     setError(null);
     try {
-      setReport(await api.exportShoot(shootId, { kind, selection, dest: needsDest ? dest : undefined }));
+      setReport(await api.exportShoot(shootId, { kind, selection, dest: needsDest ? dest : undefined, by_category: kind === "folder" && byCategory }));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -89,6 +90,12 @@ export function ExportDialog() {
                 </span>
               </label>
             )}
+            {kind === "folder" && (
+              <label className="check">
+                <input type="checkbox" checked={byCategory} onChange={(e) => setByCategory(e.target.checked)} />
+                Sort into a folder for each topic (Group photos, Details, …)
+              </label>
+            )}
             {error && <p className="error-text">{error}</p>}
           </>
         )}
@@ -116,6 +123,8 @@ function Result({ report }: { report: ExportReport }) {
   } else if (report.kind === "folder") {
     lines.push(`${n("copied")} photo${n("copied") === 1 ? "" : "s"} copied to ${String(report.dest)}.`);
     if (n("already_there")) lines.push(`${n("already_there")} were already there.`);
+    const folders = report.folders as Record<string, number> | undefined;
+    if (folders) lines.push(`Sorted into ${Object.keys(folders).length} folders: ${Object.entries(folders).map(([k, v]) => `${k} (${v})`).join(", ")}.`);
     if (n("ratings_embedded")) lines.push(`${n("ratings_embedded")} JPEG copies carry their label and stars.`);
     if (n("skipped_missing")) lines.push(`${n("skipped_missing")} skipped because the original was not found.`);
   } else {

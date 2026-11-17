@@ -67,15 +67,20 @@ let imageBase: Connection | null = null;
 conn().then((c) => (imageBase = c)).catch(() => undefined);
 
 /** URL for an <img>. The hash makes it cacheable forever and fresh when the file changes. */
-export function imageUrl(photo: { id: number; file_hash: string | null }, kind: "thumb" | "preview"): string {
+export function imageUrl(
+  photo: { id: number; file_hash: string | null; rotation?: number },
+  kind: "thumb" | "preview" | "full",
+): string {
   if (!imageBase) return "";
-  return `${imageBase.base}/photos/${photo.id}/${kind}?token=${encodeURIComponent(imageBase.token)}&v=${photo.file_hash ?? ""}`;
+  const version = `${photo.file_hash ?? ""}-${photo.rotation ?? 0}`;
+  return `${imageBase.base}/photos/${photo.id}/${kind}?token=${encodeURIComponent(imageBase.token)}&v=${version}`;
 }
 
 export interface ExportRequest {
   kind: "xmp" | "folder" | "csv";
   selection: "picked" | "keep" | "decided" | "all";
   dest?: string;
+  by_category?: boolean;
 }
 export type ExportReport = Record<string, unknown> & { kind: string; selected: number; failed?: string[] };
 
@@ -83,6 +88,7 @@ export const api = {
   ready: () => conn().then(() => undefined),
   shoots: () => request<Shoot[]>("/shoots"),
   addShoot: (folder_path: string) => post<Shoot>("/shoots", { folder_path }),
+  addPhotos: (files: string[]) => post<Shoot & { skipped: number }>("/shoots", { files }),
   removeShoot: (id: number) => request<{ ok: boolean }>(`/shoots/${id}`, { method: "DELETE" }),
   scan: (id: number) => post<Progress>(`/shoots/${id}/scan`),
   cancel: (id: number) => post<Progress>(`/shoots/${id}/cancel`),
@@ -91,6 +97,9 @@ export const api = {
   teach: (id: number) => request<{ photo_ids: number[] }>(`/shoots/${id}/teach?limit=60`),
   decide: (ids: number[], change: { label?: UserLabel; rating?: number; reason?: string }) =>
     post<{ results: unknown[] }>("/decisions", { photo_ids: ids, ...change }),
+  info: () => request<{ shoot_types: { id: string; name: string }[] }>("/info"),
+  setShootType: (id: number, shoot_type: string) => post<{ shoot_type: string; method: string }>(`/shoots/${id}/type`, { shoot_type }),
+  rotate: (id: number, degrees: 90 | -90) => post<{ photo_id: number; rotation: number }>(`/photos/${id}/rotate`, { degrees }),
   finish: (id: number) => post<{ ok: boolean }>(`/shoots/${id}/finish`),
   exportShoot: (id: number, body: ExportRequest) => post<ExportReport>(`/shoots/${id}/export`, body),
   modelStatus: () => request<ModelStatus>("/model/status"),
@@ -110,12 +119,30 @@ export const api = {
   },
 };
 
-/** Ask for a folder: native dialog in the app, a typed path in a browser. */
+const PHOTO_EXTENSIONS = ["jpg", "jpeg", "png", "heic", "heif", "cr3", "cr2", "nef", "arw", "raf", "dng"];
+
+/** Ask for a folder with a Finder dialog. Returns null if the user cancels. */
 export async function pickFolder(title: string): Promise<string | null> {
   if (isTauri) {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const picked = await open({ directory: true, multiple: false, title });
     return typeof picked === "string" ? picked : null;
   }
-  return window.prompt(`${title}\n\nPaste the full folder path:`)?.trim() || null;
+  try {
+    // In a browser the page cannot see real paths, so the engine asks Finder for us.
+    return (await post<{ path: string | null }>("/dialog/folder")).path;
+  } catch {
+    // Not on a Mac: fall back to typing the path.
+    return window.prompt(`${title}\n\nPaste the full folder path:`)?.trim() || null;
+  }
+}
+
+/** Ask for one or more photos with a Finder dialog. Returns [] if the user cancels. */
+export async function pickPhotos(title: string): Promise<string[]> {
+  if (isTauri) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({ multiple: true, title, filters: [{ name: "Photos", extensions: PHOTO_EXTENSIONS }] });
+    return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+  }
+  return (await post<{ paths: string[] }>("/dialog/files")).paths;
 }

@@ -40,9 +40,10 @@ one you kept. Tune `Thresholds` in `engine/culler/config.py` (or a TOML file pas
 
 ## Build the Mac app
 
-On an Apple Silicon Mac with Xcode command line tools, Rust, Node 22 and Python 3.11+:
+On an Apple Silicon Mac:
 
 ```bash
+./scripts/check_mac.sh                    # says what is missing and how to install it
 ./scripts/build_engine.sh                 # bundles the Python engine
 ./scripts/build_app.sh                    # Culler.app and a .dmg
 ```
@@ -65,6 +66,6 @@ folder": the copies carry the label and stars inside the file.
 ## Tests
 
 ```bash
-cd engine && pytest          # 92 tests
+cd engine && pytest          # 94 tests
 cd app && npm test && npm run build
 ```

@@ -77,7 +77,11 @@ class ClipEmbedder:
 
     dim = 512
 
-    def __init__(self, model: str, pretrained: str | None, cache_dir: str | None = None, batch_size: int = 32):
+    def __init__(
+        self, model: str, pretrained: str | None, cache_dir: str | None = None, batch_size: int = 32, tag: str | None = None
+    ):
+        """``pretrained`` is a weights name or a file path. ``tag`` names the weights when a path is given,
+        so stored vectors carry the same model name on every machine."""
         import open_clip
         import torch
 
@@ -93,7 +97,8 @@ class ClipEmbedder:
         )
         self._model.eval().to(self.device)
         self._batch = batch_size
-        self.name = f"clip-{model}-{pretrained or 'random'}"
+        self._tokenizer = open_clip.get_tokenizer(model)
+        self.name = f"clip-{model}-{tag or pretrained or 'random'}"
         self.dim = int(getattr(self._model.visual, "output_dim", 512))
 
     def embed(self, images: list[Image.Image]) -> np.ndarray:
@@ -108,6 +113,13 @@ class ClipEmbedder:
             return np.zeros((0, self.dim), dtype=np.float32)
         return _l2(np.concatenate(out))
 
+    def embed_text(self, texts: list[str]) -> np.ndarray:
+        """Embed descriptions into the same space as images, for sorting photos by topic."""
+        torch = self._torch
+        with torch.inference_mode():
+            feats = self._model.encode_text(self._tokenizer(texts).to(self.device))
+        return _l2(feats.float().cpu().numpy())
+
 
 def build_embedder(settings: Settings) -> Embedder:
     """CLIP when it is installed and its weights can be loaded, otherwise the fallback."""
@@ -115,11 +127,46 @@ def build_embedder(settings: Settings) -> Embedder:
         return FallbackEmbedder()
     try:
         settings.models_dir.mkdir(parents=True, exist_ok=True)
-        return ClipEmbedder(settings.clip_model, settings.clip_pretrained, cache_dir=str(settings.models_dir))
+        try:
+            return ClipEmbedder(settings.clip_model, settings.clip_pretrained, cache_dir=str(settings.models_dir))
+        except ImportError:
+            raise
+        except Exception:
+            # The usual download host failed. Many weights are also published as a plain file.
+            path = _download_weights(settings)
+            if path is None:
+                raise
+            return ClipEmbedder(settings.clip_model, str(path), tag=settings.clip_pretrained)
     except Exception:
         if settings.embedder == "clip":
             raise
         return FallbackEmbedder()
+
+
+def _download_weights(settings: Settings):
+    """Fetch the weights file from the model's direct URL, if it has one. Returns the path or None."""
+    import os
+    import urllib.request
+    from pathlib import Path
+
+    import open_clip
+
+    cfg = open_clip.pretrained.get_pretrained_cfg(settings.clip_model, settings.clip_pretrained) or {}
+    url = cfg.get("url")
+    if not url:
+        return None
+    target = Path(settings.models_dir) / url.rsplit("/", 1)[-1]
+    if not target.exists():
+        tmp = target.with_suffix(f".{os.getpid()}.part")
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response, open(tmp, "wb") as out:  # noqa: S310 (fixed https URL from open_clip)
+                while chunk := response.read(1 << 20):
+                    out.write(chunk)
+            os.replace(tmp, target)
+        finally:
+            if tmp.exists():
+                tmp.unlink()
+    return target
 
 
 def to_blob(vec: np.ndarray) -> bytes:

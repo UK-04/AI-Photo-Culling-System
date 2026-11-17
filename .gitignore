@@ -22,3 +22,8 @@ engine/tests/benchmark/
 
 # local python environment
 .venv/
+
+# build environments and updater keys
+engine/.venv-build/
+*.key
+*.key.pub

@@ -22,6 +22,10 @@ export function matchesFilter(p: Photo, filter: Filter, teachIds?: Set<number>):
       return p.user_label === "KEEP";
     case "rated3":
       return p.user_rating >= 3;
+    case "fixable":
+      return p.recover_score !== null && p.recover_score >= 0.5 && p.recover_score < 1;
+    case "offtopic":
+      return Boolean(p.off_topic);
     case "teach":
       return teachIds?.has(p.id) ?? false;
   }
@@ -59,8 +63,9 @@ export function visiblePhotos(
   sort: Sort,
   expanded: Set<number>,
   teachIds?: Set<number>,
+  category: string | null = null,
 ): Photo[] {
-  const passing = photos.filter((p) => matchesFilter(p, filter, teachIds));
+  const passing = photos.filter((p) => matchesFilter(p, filter, teachIds) && (category === null || p.category === category));
   const lead = new Map<number, Photo>();
   for (const p of passing) {
     if (p.burst_id === null || expanded.has(p.burst_id)) continue;
@@ -85,6 +90,43 @@ export function nextNeedingReview(list: Photo[], from: number): number {
     if (p.user_label === null && p.status === "done" && p.label !== "KEEP") return i;
   }
   return -1;
+}
+
+/** Zoom levels for the loupe: "fill" or a multiple of actual size (1 = 100%). */
+export const ZOOM_LEVELS = [
+  { id: "fill", name: "Fill" },
+  { id: "0.5", name: "50%" },
+  { id: "1", name: "100%" },
+  { id: "2", name: "200%" },
+  { id: "4", name: "400%" },
+] as const;
+
+export function stepZoomLevel(current: string, direction: 1 | -1): string {
+  const i = ZOOM_LEVELS.findIndex((l) => l.id === current);
+  const next = Math.min(ZOOM_LEVELS.length - 1, Math.max(0, (i < 0 ? 2 : i) + direction));
+  return ZOOM_LEVELS[next].id;
+}
+
+/**
+ * Loupe geometry. The image is laid out at "fit" size and then scaled.
+ * Returns the scale for a zoom level, where `fit` is fit-size pixels per image pixel.
+ */
+export function scaleForLevel(level: string, fit: number, fitW: number, fitH: number, boxW: number, boxH: number): number {
+  if (level === "fill") return Math.max(boxW / fitW, boxH / fitH);
+  return Number(level) / fit;
+}
+
+/** Keep a scaled image covering the box, or centred when it is smaller than the box. */
+export function clampPan(offset: number, scaled: number, box: number): number {
+  if (scaled <= box) return (box - scaled) / 2;
+  return Math.min(0, Math.max(box - scaled, offset));
+}
+
+/** Topic categories present in a shoot with how many photos each holds, biggest first. */
+export function categoryCounts(photos: Photo[]): { name: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const p of photos) if (p.category) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+  return [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
 export function percent(v: number | null | undefined): string {

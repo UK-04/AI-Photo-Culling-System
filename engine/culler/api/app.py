@@ -20,16 +20,18 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import __version__
+from .. import __version__, native
+from ..config import SUPPORTED_EXTS
 from ..db.repo import UNSET
 from ..export import select_rows
 from ..export.csv_export import export_csv
-from ..export.folders import copy_photos
+from ..export.folders import copy_by_category, copy_photos
 from ..export.xmp import export_sidecars
 from ..io.exif import format_shutter
 from ..learning.active import teach_queue
 from ..scoring.reasons import USER_REASONS
 from ..service import Engine
+from ..topics.taxonomy import SHOOT_TYPES, shoot_type_list
 from .jobs import JobManager
 
 DEFAULT_ORIGINS = [
@@ -40,7 +42,8 @@ _IMAGE_HEADERS = {"Cache-Control": "private, max-age=31536000, immutable"}
 
 
 class ShootIn(BaseModel):
-    folder_path: str
+    folder_path: str | None = None  # a whole folder ...
+    files: list[str] | None = Field(default=None, max_length=50000)  # ... or hand-picked photos
     name: str | None = None
 
 
@@ -59,7 +62,16 @@ class ExportIn(BaseModel):
     selection: Literal["picked", "keep", "decided", "all"] = "all"
     dest: str | None = None
     write_ratings: bool = True
+    by_category: bool = False  # folder export: one sub-folder per topic category
     reject_rating: int | None = -1
+
+
+class ShootTypeIn(BaseModel):
+    shoot_type: str
+
+
+class RotateIn(BaseModel):
+    degrees: Literal[90, -90, 180] = 90  # clockwise
 
 
 class TrainIn(BaseModel):
@@ -108,7 +120,10 @@ def create_app(engine: Engine, token: str | None = None, ui_dir: str | os.PathLi
 
     @app.get("/info", dependencies=secured)
     def info() -> dict:
-        return {"version": __version__, "data_dir": str(engine.settings.data_dir), "user_reasons": USER_REASONS, **engine.model_status()}
+        return {
+            "version": __version__, "data_dir": str(engine.settings.data_dir), "user_reasons": USER_REASONS,
+            "shoot_types": shoot_type_list(), **engine.model_status(),
+        }
 
     # ------------------------------------------------------------------ shoots
     @app.get("/shoots", dependencies=secured)
@@ -117,11 +132,38 @@ def create_app(engine: Engine, token: str | None = None, ui_dir: str | os.PathLi
 
     @app.post("/shoots", dependencies=secured)
     def add_shoot(body: ShootIn) -> dict:
+        if body.files:
+            files = [Path(f).expanduser().resolve() for f in body.files]
+            photos = [f for f in files if f.is_file() and f.suffix.lower() in SUPPORTED_EXTS]
+            if not photos:
+                raise HTTPException(400, "None of those files are photos Culler can read (JPG, HEIC, PNG or RAW).")
+            folder = Path(os.path.commonpath([str(f.parent) for f in photos]))
+            shoot_id = repo.add_shoot(str(folder), body.name, only_files=[str(f) for f in photos])
+            return {**shoot_out(need_shoot(shoot_id)), "skipped": len(files) - len(photos)}
+        if not body.folder_path:
+            raise HTTPException(400, "Send a folder_path or a list of files")
         folder = Path(body.folder_path).expanduser()
         if not folder.is_dir():
             raise HTTPException(400, f"Not a folder: {folder}")
         shoot_id = repo.add_shoot(str(folder), body.name)
         return shoot_out(need_shoot(shoot_id))
+
+    # ------------------------------------------------------------------ Finder dialogs (browser mode)
+    def _dialog(run):
+        try:
+            return run()
+        except native.DialogUnavailable as exc:
+            raise HTTPException(501, str(exc)) from None
+        except native.DialogError as exc:
+            raise HTTPException(500, str(exc)) from None
+
+    @app.post("/dialog/folder", dependencies=secured)
+    def dialog_folder() -> dict:
+        return {"path": _dialog(native.pick_folder)}
+
+    @app.post("/dialog/files", dependencies=secured)
+    def dialog_files() -> dict:
+        return {"paths": _dialog(native.pick_files)}
 
     @app.get("/shoots/{shoot_id}", dependencies=secured)
     def get_shoot(shoot_id: int) -> dict:
@@ -134,6 +176,15 @@ def create_app(engine: Engine, token: str | None = None, ui_dir: str | os.PathLi
         jobs.cancel_scan(shoot_id)
         repo.update_shoot(shoot_id, archived=1)
         return {"ok": True}
+
+    @app.post("/shoots/{shoot_id}/type", dependencies=secured)
+    def set_type(shoot_id: int, body: ShootTypeIn) -> dict:
+        """Say what kind of shoot this is, and re-sort its photos into that kind's categories."""
+        need_shoot(shoot_id)
+        if body.shoot_type not in SHOOT_TYPES:
+            raise HTTPException(400, f"shoot_type must be one of: {', '.join(SHOOT_TYPES)}")
+        repo.update_shoot(shoot_id, shoot_type=body.shoot_type)
+        return {"shoot_type": body.shoot_type, "method": engine.categorize(shoot_id)}
 
     @app.post("/shoots/{shoot_id}/scan", dependencies=secured)
     def scan(shoot_id: int) -> dict:
@@ -204,7 +255,10 @@ def create_app(engine: Engine, token: str | None = None, ui_dir: str | os.PathLi
         elif body.kind == "folder":
             if not body.dest:
                 raise HTTPException(400, "Choose a destination folder")
-            report = copy_photos(rows, body.dest, write_ratings=body.write_ratings, reject_rating=body.reject_rating).to_dict()
+            if body.by_category:
+                report = copy_by_category(rows, body.dest, write_ratings=body.write_ratings, reject_rating=body.reject_rating)
+            else:
+                report = copy_photos(rows, body.dest, write_ratings=body.write_ratings, reject_rating=body.reject_rating).to_dict()
         else:
             if not body.dest:
                 raise HTTPException(400, "Choose where to save the CSV")
@@ -237,6 +291,21 @@ def create_app(engine: Engine, token: str | None = None, ui_dir: str | os.PathLi
     @app.get("/photos/{photo_id}/preview", dependencies=secured)
     def preview(photo_id: int) -> FileResponse:
         return _image(photo_id, "preview")
+
+    @app.get("/photos/{photo_id}/full", dependencies=secured)
+    def full(photo_id: int) -> FileResponse:
+        """Full resolution, for zooming in."""
+        found = engine.full_image_path(photo_id)
+        if found is None:
+            raise HTTPException(404, "Full-size image not available. Is the drive with the originals connected?")
+        return FileResponse(found[0], media_type=found[1], headers=_IMAGE_HEADERS)
+
+    @app.post("/photos/{photo_id}/rotate", dependencies=secured)
+    def rotate(photo_id: int, body: RotateIn) -> dict:
+        photo = engine.rotate(photo_id, body.degrees)
+        if photo is None:
+            raise HTTPException(404, "No such photo")
+        return {"photo_id": photo_id, "rotation": photo["rotation"]}
 
     def _decide(photo_id: int, body: DecisionIn) -> dict:
         label = body.label if "label" in body.model_fields_set else UNSET
@@ -284,6 +353,8 @@ def _filter(rows: list[dict], name: str) -> list[dict]:
         "undecided": lambda r: r.get("user_label") is None,
         "picked": lambda r: r.get("user_label") == "KEEP",
         "rated3": lambda r: (r.get("user_rating") or 0) >= 3,
+        "offtopic": lambda r: bool(r.get("off_topic")),
+        "fixable": lambda r: r.get("recover_score") is not None and 0.5 <= r["recover_score"] < 1.0,
     }
     if name not in tests:
         raise HTTPException(400, f"filter must be one of: {', '.join(tests)}")
