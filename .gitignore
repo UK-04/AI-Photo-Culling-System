@@ -19,3 +19,6 @@ engine/tests/benchmark/
 .DS_Store
 *.dmg
 .env
+
+# local python environment
+.venv/

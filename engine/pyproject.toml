@@ -7,25 +7,27 @@ name = "culler"
 version = "0.1.0"
 description = "Local photo-culling engine: technical analysis, burst grouping, rule scoring and a personal taste model."
 requires-python = ">=3.11"
-# Pinned to the versions the test suite was run against.
+# Minimum versions. The test suite was run on Python 3.13 with numpy 2.5, OpenCV 5.0,
+# Pillow 12.3, scikit-learn 1.9, mediapipe 0.10.32; older versions back to these floors
+# install on Python 3.11 and 3.12.
 dependencies = [
-  "numpy==2.5.3",
-  "opencv-python-headless==5.0.0.93",
-  "pillow==12.3.0",
-  "pillow-heif==1.8.1",
-  "rawpy==0.28.0",
-  "xxhash==4.1.0",
-  "scikit-learn==1.9.1",
-  "joblib==1.6.0",
-  "fastapi==0.163.1",
-  "uvicorn==0.54.0",
-  "mediapipe==0.10.32",
+  "numpy>=1.26",
+  "opencv-python-headless>=4.9",
+  "pillow>=10.1",
+  "pillow-heif>=0.16",
+  "rawpy>=0.21",
+  "xxhash>=3.4",
+  "scikit-learn>=1.4",
+  "joblib>=1.3",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "mediapipe>=0.10.14",
 ]
 
 [project.optional-dependencies]
 # CLIP embeddings. Without this extra the engine uses its built-in fallback descriptor.
-clip = ["torch==2.15.0", "open_clip_torch==4.2.2"]
-dev = ["pytest==9.1.1", "httpx==0.28.1", "ruff", "mypy"]
+clip = ["torch>=2.2", "open_clip_torch>=2.24"]
+dev = ["pytest>=8", "httpx>=0.27", "ruff", "mypy"]
 build = ["pyinstaller"]
 
 [project.scripts]
