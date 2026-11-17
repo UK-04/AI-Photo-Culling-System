@@ -10,8 +10,14 @@ from culler.export import select_rows
 from culler.export.csv_export import COLUMNS, export_csv
 from culler.export.folders import copy_photos
 from culler.export.xmp import (
-    XmpMergeError, embed_in_jpeg_bytes, export_sidecars, merge_packet, new_packet, rating_and_label,
-    sidecar_path, write_sidecar,
+    XmpMergeError,
+    embed_in_jpeg_bytes,
+    export_sidecars,
+    merge_packet,
+    new_packet,
+    rating_and_label,
+    sidecar_path,
+    write_sidecar,
 )
 
 LIGHTROOM_SIDECAR = """<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0">

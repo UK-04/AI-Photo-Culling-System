@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Culler",
+  "version": "0.1.0",
+  "identifier": "com.usmankhan.culler",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Culler",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 980,
+        "minHeight": 620,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' http://127.0.0.1:* data: blob:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "category": "public.app-category.photography",
+    "copyright": "\u00a9 2026 Usman Khan",
+    "shortDescription": "Cull photo shoots fast, on your own Mac",
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/culler-engine"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "entitlements": "entitlements.plist",
+      "hardenedRuntime": true
+    },
+    "resources": {
+      "binaries/culler-engine-dist/": "binaries/culler-engine-dist/"
+    }
+  }
+}

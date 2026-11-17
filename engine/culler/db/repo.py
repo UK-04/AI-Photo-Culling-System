@@ -10,10 +10,11 @@ import json
 import os
 import sqlite3
 import threading
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 UNSET: Any = object()
@@ -306,7 +307,7 @@ class Repo:
                       a.subject_sharpness, a.face_count
                FROM photos p LEFT JOIN scores s ON s.photo_id = p.id LEFT JOIN analysis a ON a.photo_id = p.id
                WHERE p.shoot_id = ? AND p.status IN ('done', 'error')
-               ORDER BY p.capture_ts, p.path""",
+               ORDER BY (p.status = 'error'), p.capture_ts, p.path""",
             (shoot_id,),
         ).fetchall()
         out = []

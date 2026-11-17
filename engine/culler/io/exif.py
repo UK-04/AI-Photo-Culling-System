@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from PIL import Image
@@ -50,7 +50,7 @@ def parse_capture_time(dt: str | None, subsec: str | None = None) -> tuple[str |
         digits = "".join(ch for ch in str(subsec) if ch.isdigit())
         if digits:
             frac = float("0." + digits)
-    ts = parsed.replace(tzinfo=timezone.utc).timestamp() + frac
+    ts = parsed.replace(tzinfo=UTC).timestamp() + frac
     iso = parsed.strftime("%Y-%m-%dT%H:%M:%S") + (f"{frac:.3f}"[1:] if frac else "")
     return iso, ts
 

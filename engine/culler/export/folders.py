@@ -8,7 +8,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..io.hashing import file_hash
-from .xmp import DEFAULT_LABELS, XmpMergeError, embed_in_jpeg_bytes, rating_and_label, sidecar_path, write_sidecar
+from .xmp import (
+    DEFAULT_LABELS,
+    XmpMergeError,
+    embed_in_jpeg_bytes,
+    rating_and_label,
+    sidecar_path,
+    write_sidecar,
+)
 
 _JPEG = {".jpg", ".jpeg"}
 

@@ -1,0 +1,31 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  engine:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: ./scripts/fetch_models.sh
+      - run: pip install -e "engine[dev]"
+      - run: ruff check engine
+      - run: cd engine && pytest
+
+  app:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cd app && npm ci && npm run typecheck && npm test && npm run build
+      # Compiles the Rust shell. The sidecar is stubbed: this job checks code, it does not package.
+      - run: |
+          mkdir -p app/src-tauri/binaries
+          printf '#!/bin/sh\n' > "app/src-tauri/binaries/culler-engine-$(rustc -vV | sed -n 's/^host: //p')"
+          chmod +x app/src-tauri/binaries/culler-engine-*
+          cd app/src-tauri && cargo check

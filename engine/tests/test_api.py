@@ -61,6 +61,7 @@ def test_scan_then_grid_filters_and_sorting(client, scanned):
     photos, counts = data["photos"], data["counts"]
     assert len(photos) == len(truth) + 1 and counts["total"] == len(photos)
     assert [p["capture_ts"] for p in photos if p["capture_ts"]] == sorted(p["capture_ts"] for p in photos if p["capture_ts"])
+    assert photos[-1]["status"] == "error" and photos[0]["status"] == "done"  # unreadable files sort last
     for name in ("keep", "review", "reject"):
         got = client.get(f"/shoots/{shoot_id}/photos", params={"filter": name}, headers=AUTH).json()["photos"]
         assert len(got) == counts[name] and all(p["label"] == name.upper() for p in got)

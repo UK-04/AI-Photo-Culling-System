@@ -4,7 +4,12 @@ import cv2
 import numpy as np
 import pytest
 
-from culler.analysis.blur import classify_blur, gradient_anisotropy, motion_factor, relative_sharpness
+from culler.analysis.blur import (
+    classify_blur,
+    gradient_anisotropy,
+    motion_factor,
+    relative_sharpness,
+)
 from culler.analysis.exposure import analyze_exposure, exposure_score
 from culler.analysis.faces import Face, NullBackend, eye_aspect_ratio, eye_state, main_face
 from culler.analysis.normalize import percentile_ranks
