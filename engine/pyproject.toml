@@ -27,7 +27,8 @@ dependencies = [
 [project.optional-dependencies]
 # CLIP embeddings. Without this extra the engine uses its built-in fallback descriptor.
 clip = ["torch>=2.2", "open_clip_torch>=2.24"]
-dev = ["pytest>=8", "httpx>=0.27", "ruff", "mypy"]
+# scikit-image supplies the sample portrait the face tests run on.
+dev = ["pytest>=8", "httpx>=0.27", "ruff", "mypy", "scikit-image>=0.22"]
 build = ["pyinstaller"]
 
 [project.scripts]

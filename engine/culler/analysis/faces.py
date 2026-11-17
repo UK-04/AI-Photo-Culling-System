@@ -186,6 +186,7 @@ class FacePipeline:
         self._detector, self._eyes = detector, eyes
         self._min_face_px, self._max_eye_faces = min_face_px, max_eye_faces
         self.name = detector.name + ("+landmarks" if eyes is not None else "")
+        self.eyes_problem: str | None = None
 
     def boxes(self, rgb: np.ndarray) -> list[Face]:
         """Face boxes without the (slower) eye measurement."""
@@ -220,13 +221,18 @@ def build_face_backend(settings: Settings) -> FaceBackend:
         return NullBackend()
     detector = YuNetBackend(yunet)
     eyes: LandmarkEyes | None = None
+    problem: str | None = None
     landmarker = find_model_file(LANDMARKER_FILE, settings)
-    if landmarker is not None:
+    if landmarker is None:
+        problem = f"{LANDMARKER_FILE} is not installed (run scripts/fetch_models.sh)"
+    else:
         try:
             eyes = LandmarkEyes(landmarker, settings.thresholds.blink_closed, settings.thresholds.ear_closed)
-        except Exception:
-            eyes = None
-    return FacePipeline(detector, eyes, settings.thresholds.min_face_px)
+        except Exception as exc:  # keep working without eye checks, but remember why
+            problem = f"{type(exc).__name__}: {exc}"
+    pipeline = FacePipeline(detector, eyes, settings.thresholds.min_face_px)
+    pipeline.eyes_problem = problem  # None when closed-eye detection is working
+    return pipeline
 
 
 def main_face(faces: list[Face], width: int, height: int) -> Face | None:

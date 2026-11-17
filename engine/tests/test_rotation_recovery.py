@@ -193,3 +193,19 @@ def test_sideways_portrait_is_auto_rotated_in_a_scan(engine, portrait, detector,
     a = engine.repo.photo_detail(rows["upright.jpg"]["id"])["faces"][0]["box_rel"]
     b = engine.repo.photo_detail(rows["sideways.jpg"]["id"])["faces"][0]["box_rel"]
     assert np.allclose(a, b, atol=0.03)
+
+
+def test_eyes_are_measured_on_a_real_face(portrait, detector):
+    """Closed-eye detection end to end on a real portrait (eyes open). Needs the landmark model."""
+    if getattr(detector, "eyes_problem", "missing"):
+        pytest.skip(f"landmark model not available: {getattr(detector, 'eyes_problem', None)}")
+    faces = detector.detect(portrait)
+    assert len(faces) == 1 and detector.name == "yunet+landmarks"
+    face = faces[0]
+    assert face.eyes_closed is False and face.eye_open is not None and face.eye_open > 0.4
+    # the same face with the eye region painted over reads as not-open or unmeasured, never as open
+    x, y, w, h = (int(v) for v in face.box)
+    covered = portrait.copy()
+    covered[y + int(0.25 * h) : y + int(0.5 * h), x : x + w] = covered[y + int(0.6 * h), x + w // 2]
+    blocked = detector.detect(covered)
+    assert not blocked or blocked[0].eye_open is None or blocked[0].eye_open < face.eye_open

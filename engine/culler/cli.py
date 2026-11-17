@@ -185,7 +185,13 @@ def cmd_selftest(args: argparse.Namespace) -> int:
                 problems.append(f"{p.file} ({p.defect}) was labelled {row['label']}")
         if not all(r.get("category") for r in rows.values() if r["status"] == "done"):
             problems.append("some photos have no topic category")
-        print(f"scan: {len(rows)} photos, faces: {engine.face_backend_name}, {len(problems)} problems")
+        from .analysis.faces import build_face_backend
+
+        faces = build_face_backend(settings)
+        eyes_problem = getattr(faces, "eyes_problem", "no face detection model installed")
+        if eyes_problem:
+            problems.append(f"closed-eye detection is not working: {eyes_problem}")
+        print(f"scan: {len(rows)} photos, faces: {faces.name}, {len(problems)} problems")
 
     if args.vision:
         import numpy as np
