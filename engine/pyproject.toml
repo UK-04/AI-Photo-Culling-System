@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "culler"
+version = "0.1.0"
+description = "Local photo-culling engine: technical analysis, burst grouping, rule scoring and a personal taste model."
+requires-python = ">=3.11"
+# Pinned to the versions the test suite was run against.
+dependencies = [
+  "numpy==2.5.3",
+  "opencv-python-headless==5.0.0.93",
+  "pillow==12.3.0",
+  "pillow-heif==1.8.1",
+  "rawpy==0.28.0",
+  "xxhash==4.1.0",
+  "scikit-learn==1.9.1",
+  "joblib==1.6.0",
+  "fastapi==0.163.1",
+  "uvicorn==0.54.0",
+  "mediapipe==0.10.32",
+]
+
+[project.optional-dependencies]
+# CLIP embeddings. Without this extra the engine uses its built-in fallback descriptor.
+clip = ["torch==2.15.0", "open_clip_torch==4.2.2"]
+dev = ["pytest==9.1.1", "httpx==0.28.1", "ruff", "mypy"]
+build = ["pyinstaller"]
+
+[project.scripts]
+culler = "culler.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["culler*"]
+
+[tool.setuptools.package-data]
+culler = ["db/migrations/*.sql", "assets/models/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

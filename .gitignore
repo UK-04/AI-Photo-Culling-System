@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+node_modules/
+app/dist/
+app/src-tauri/target/
+app/src-tauri/binaries/
+app/src-tauri/gen/
+# model files are fetched by scripts/fetch_models.sh, not committed
+engine/culler/assets/models/*
+!engine/culler/assets/models/.gitkeep
+# the owner's benchmark shoots never go in git
+engine/tests/benchmark/
+.DS_Store
+*.dmg
+.env
