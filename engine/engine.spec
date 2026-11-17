@@ -12,7 +12,8 @@ for package in ("mediapipe", "open_clip", "torchvision", "rawpy", "pillow_heif",
 datas += collect_data_files("sklearn")
 
 a = Analysis(["run_engine.py"], pathex=["."], binaries=binaries, datas=datas, hiddenimports=hiddenimports,
-             excludes=["tkinter", "matplotlib", "IPython", "pytest", "torchaudio"], noarchive=False)
+             # matplotlib stays in: mediapipe imports it, and without it closed-eye detection cannot load.
+             excludes=["tkinter", "IPython", "pytest", "torchaudio"], noarchive=False)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="culler-engine", console=True, target_arch="arm64",
           codesign_identity=None, entitlements_file=None)
