@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Culler for Mac</title>
+<meta name="description" content="Cull a photo shoot in minutes. Culler flags blur, closed eyes and blown faces, stacks bursts, sorts by topic and learns your taste. Free for Mac.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column. The download block leads, then a contact sheet showing what Culler does to a shoot. */
+:root {
+  --paper: #f4f5f2;      /* proof-sheet paper */
+  --ink: #16181a;
+  --ink-2: #5b6065;
+  --rule: #d9dbd6;
+  --frame: #2a2d30;      /* film rebate around each frame */
+  --keep: #1f8f4e;
+  --reject: #c8392e;
+  --review: #c98500;
+  --button: #16181a;
+  --on-button: #f4f5f2;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #141516; --ink: #eceeea; --ink-2: #9aa0a5; --rule: #2c2f31; --frame: #0b0c0d;
+    --keep: #3cc174; --reject: #ff6a5c; --review: #f0ad2c; --button: #eceeea; --on-button: #141516; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #141516; --ink: #eceeea; --ink-2: #9aa0a5; --rule: #2c2f31; --frame: #0b0c0d;
+  --keep: #3cc174; --reject: #ff6a5c; --review: #f0ad2c; --button: #eceeea; --on-button: #141516; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 17px/1.55 var(--display);
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 860px; margin: 0 auto; padding-block: 64px 48px; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--keep); outline-offset: 3px; }
+
+.mark { font: 500 13px/1 var(--mono); color: var(--ink-2); letter-spacing: 0.02em; margin: 0 0 28px; }
+h1 { font-weight: 800; font-size: clamp(40px, 7.5vw, 76px); line-height: 0.98; letter-spacing: -0.03em; margin: 0 0 20px; text-wrap: balance; max-width: 12ch; }
+.lede { font-size: 19px; color: var(--ink-2); max-width: 54ch; margin: 0 0 32px; }
+
+.download { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; margin-bottom: 14px; }
+.button {
+  display: inline-flex; align-items: center; gap: 12px; padding: 16px 26px; border-radius: 12px;
+  background: var(--button); color: var(--on-button); text-decoration: none; font-weight: 600; font-size: 18px;
+  transition: transform 120ms ease-out;
+}
+.button:hover { transform: translateY(-1px); }
+.button:active { transform: translateY(1px); }
+.button svg { width: 20px; height: 20px; flex: none; }
+.meta { font: 400 14px/1.5 var(--mono); color: var(--ink-2); }
+.meta strong { color: var(--ink); font-weight: 500; }
+.unavailable { display: none; color: var(--reject); font-size: 15px; margin: 8px 0 0; }
+
+/* The contact sheet: twelve frames as Culler would mark them. */
+.sheet { margin: 56px 0 12px; background: var(--frame); border-radius: 6px; padding: 14px; overflow-x: auto; }
+.strip { display: grid; grid-template-columns: repeat(6, minmax(92px, 1fr)); gap: 10px; min-width: 600px; }
+.frame { position: relative; aspect-ratio: 3 / 2; border-radius: 2px; overflow: hidden; }
+.frame span { position: absolute; left: 6px; bottom: 5px; font: 500 10.5px/1 var(--mono); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.frame::after { content: ""; position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%; }
+.frame.k::after { background: var(--keep); }
+.frame.r::after { background: var(--reject); }
+.frame.v::after { background: var(--review); }
+.frame.r { filter: saturate(.5) brightness(.75); }
+.frame.blur { filter: blur(1.2px) saturate(.5) brightness(.75); }
+.caption { font: 400 13px/1.5 var(--mono); color: var(--ink-2); margin: 0 0 56px; }
+.caption b { font-weight: 500; }
+.caption .k { color: var(--keep); } .caption .r { color: var(--reject); } .caption .v { color: var(--review); }
+
+h2 { font-weight: 800; font-size: 26px; letter-spacing: -0.01em; margin: 0 0 18px; }
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px 36px; margin: 0 0 56px; padding: 0; list-style: none; }
+.features li { border-top: 1px solid var(--rule); padding-top: 12px; }
+.features strong { display: block; font-weight: 600; margin-bottom: 2px; }
+.features p { margin: 0; color: var(--ink-2); font-size: 15.5px; }
+
+.install { border-top: 1px solid var(--rule); padding-top: 28px; }
+.install ol { margin: 0; padding-left: 22px; display: grid; gap: 10px; max-width: 62ch; }
+.install li::marker { font-family: var(--mono); color: var(--ink-2); }
+.note { color: var(--ink-2); font-size: 15px; max-width: 62ch; margin: 18px 0 0; }
+kbd { font: 500 13px var(--mono); border: 1px solid var(--rule); border-radius: 5px; padding: 1px 5px; }
+footer { max-width: 860px; margin: 0 auto; padding-block: 24px 48px; border-top: 1px solid var(--rule); font: 400 13px/1.6 var(--mono); color: var(--ink-2); }
+
+@media (max-width: 520px) {
+  main { padding-block: 40px 32px; }
+  .lede { font-size: 17px; }
+  .button { width: 100%; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) { .button { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <p class="mark">Culler</p>
+  <h1>Cull a shoot in minutes</h1>
+  <p class="lede">Culler flags blur, closed eyes and blown-out faces, stacks bursts with the best frame on top, sorts photos by topic, and learns your taste from every pick. It runs on your Mac. Nothing is uploaded, moved or deleted.</p>
+
+  <div class="download">
+    <a class="button" id="download" href="https://github.com/UK-04/AI-Photo-Culling-System/releases/latest/download/Culler.dmg">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
+      Download for Mac
+    </a>
+    <span class="meta" id="meta">Free. Apple Silicon Mac, macOS 14 or later.</span>
+  </div>
+  <p class="unavailable" id="unavailable">No version has been published yet. Check back soon.</p>
+
+  <div class="sheet" aria-hidden="true">
+    <div class="strip">
+      <div class="frame k" style="background:linear-gradient(160deg,#c7a27a,#6d4b35 70%)"><span>0412</span></div>
+      <div class="frame v" style="background:linear-gradient(160deg,#bf9b74,#654430 70%)"><span>0413</span></div>
+      <div class="frame r blur" style="background:linear-gradient(160deg,#c3a07a,#684733 70%)"><span>0414</span></div>
+      <div class="frame k" style="background:linear-gradient(200deg,#8fb3c9,#2f4b5e 75%)"><span>0415</span></div>
+      <div class="frame r" style="background:linear-gradient(200deg,#262626,#0e0e0e)"><span>0416</span></div>
+      <div class="frame k" style="background:linear-gradient(120deg,#e8d9b5,#a88b54 80%)"><span>0417</span></div>
+      <div class="frame v" style="background:linear-gradient(170deg,#f6f3ee,#e4dccd 70%)"><span>0418</span></div>
+      <div class="frame k" style="background:linear-gradient(150deg,#9db88a,#3f5a33 75%)"><span>0419</span></div>
+      <div class="frame k" style="background:linear-gradient(150deg,#a4bd91,#46613a 75%)"><span>0420</span></div>
+      <div class="frame r blur" style="background:linear-gradient(150deg,#a0ba8d,#425d36 75%)"><span>0421</span></div>
+      <div class="frame k" style="background:linear-gradient(190deg,#d9a7a0,#7d4740 75%)"><span>0422</span></div>
+      <div class="frame v" style="background:linear-gradient(190deg,#5a5f78,#23263a 75%)"><span>0423</span></div>
+    </div>
+  </div>
+  <p class="caption"><b class="k">Green</b> keep, <b class="v">yellow</b> review, <b class="r">red</b> reject. 0414 and 0421: camera shake. 0416: lens cap on.</p>
+
+  <h2>What it does</h2>
+  <ul class="features">
+    <li><strong>Catches the misses</strong><p>Out-of-focus frames, camera shake, closed eyes and badly exposed shots, each with the reason.</p></li>
+    <li><strong>Stacks bursts</strong><p>Similar frames fold into one stack with the sharpest, eyes-open frame on top.</p></li>
+    <li><strong>Sorts by topic</strong><p>Group photos, couples, details, venue and more, for weddings, events, portraits and travel.</p></li>
+    <li><strong>Learns your taste</strong><p>Every pick and reject teaches it, so the next shoot arrives closer to how you cull.</p></li>
+    <li><strong>Built for the keyboard</strong><p><kbd>P</kbd> pick, <kbd>X</kbd> reject, <kbd>1</kbd>–<kbd>5</kbd> stars, click to zoom to 100%.</p></li>
+    <li><strong>Hands off to Lightroom</strong><p>Exports colour labels and stars as sidecars, or copies your picks to a folder.</p></li>
+  </ul>
+
+  <section class="install" aria-labelledby="install-title">
+    <h2 id="install-title">Installing</h2>
+    <ol>
+      <li>Open the downloaded <b>Culler.dmg</b> and drag Culler into Applications.</li>
+      <li>Open Culler from Applications. The first time, macOS says it cannot check the app: click <b>Done</b>.</li>
+      <li>Open <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b> next to Culler, then confirm.</li>
+    </ol>
+    <p class="note">You only do this once. Culler is not yet registered with Apple, which is why macOS asks. After the first launch it opens normally and keeps itself up to date.</p>
+  </section>
+</main>
+<footer>
+  Culler is open source. <a href="https://github.com/UK-04/AI-Photo-Culling-System">Source code</a>, and <a href="https://github.com/UK-04/AI-Photo-Culling-System/releases">every version</a> is on GitHub.
+</footer>
+<script>
+// Show the newest version and its size. The button works without this: its link always points at the newest release.
+(async () => {
+  try {
+    const res = await fetch("https://api.github.com/repos/UK-04/AI-Photo-Culling-System/releases/latest");
+    if (res.status === 404) { document.getElementById("unavailable").style.display = "block"; return; }
+    if (!res.ok) return;
+    const release = await res.json();
+    const dmg = (release.assets || []).find((a) => a.name === "Culler.dmg");
+    if (!dmg) return;
+    const mb = Math.round(dmg.size / 1048576);
+    const version = String(release.tag_name || "").replace(/^v/, "");
+    document.getElementById("meta").innerHTML =
+      `<strong>Version ${version}</strong>, ${mb} MB. Free. Apple Silicon Mac, macOS 14 or later.`;
+  } catch (_) { /* offline or rate-limited: keep the default text */ }
+})();
+</script>
+</body>
+</html>

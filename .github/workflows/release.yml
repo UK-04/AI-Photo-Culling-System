@@ -93,7 +93,10 @@ jobs:
           BUNDLE="app/src-tauri/target/aarch64-apple-darwin/release/bundle"
           OUT="$RUNNER_TEMP/release" && mkdir -p "$OUT"
           cp "$BUNDLE/macos/Culler.app.tar.gz" "$BUNDLE/macos/Culler.app.tar.gz.sig" "$OUT/"
+          # Two copies of the installer: one named for its version, and Culler.dmg, whose
+          # "latest" link never changes. The website's Download button points at that link.
           cp "$BUNDLE"/dmg/*.dmg "$OUT/Culler-$VERSION-mac.dmg"
+          cp "$BUNDLE"/dmg/*.dmg "$OUT/Culler.dmg"
           node scripts/make_latest_json.mjs "$VERSION" "$OUT/Culler.app.tar.gz.sig" \
             "https://github.com/${{ github.repository }}/releases/download/v$VERSION/Culler.app.tar.gz" \
             app/release-notes.txt > "$OUT/latest.json"
