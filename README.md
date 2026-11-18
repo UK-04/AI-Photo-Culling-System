@@ -1,6 +1,4 @@
-# Culler
-
-**[Download Culler for Mac](https://github.com/UK-04/AI-Photo-Culling-System/releases/latest/download/Culler.dmg)** (Apple Silicon, macOS 14 or later) · [Website](https://uk-04.github.io/AI-Photo-Culling-System/)
+# Photo Culler
 
 A Mac app that culls a photo shoot into KEEP / REVIEW / REJECT, says why, stacks bursts,
 and learns your taste from every decision. Everything runs on your Mac. Originals are
