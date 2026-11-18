@@ -1,6 +1,6 @@
 [package]
 name = "culler"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cull photo shoots fast, on your own Mac"
 edition = "2021"
 rust-version = "1.77"
@@ -16,6 +16,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }

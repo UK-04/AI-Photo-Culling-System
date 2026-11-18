@@ -29,6 +29,43 @@ written but marked below as not yet verified.
 - Export to Lightroom: built, with one change from the spec. Lightroom does not read pick/reject
   flags from XMP at all, so decisions go out as colour labels plus stars. See DECISIONS.md.
 
+## Added after the first build
+
+- **Finder dialogs** for "Open a folder" and "Select photos". In the Mac app these are Tauri's
+  native dialogs; in browser mode the engine asks Finder through `osascript`. The osascript
+  path is tested only with a stand-in (it cannot run on Linux): **not yet tried on a Mac**.
+- **Hand-picked photos**: a shoot can be limited to selected files (`shoots.only_files`,
+  migration 0002). Opening the folder itself widens it back to the whole folder.
+- Engine tests: 108.
+- **Group badge is clickable**: the number on a stacked photo opens and closes the group.
+- **Loupe zoom rebuilt**: single click zooms at the click point, drag or scroll pans, pinch zooms
+  freely, the click level is a setting (Fill, 50%, 100%, 200%, 400%), and zoom carries over to the
+  next photo. It is a GPU transform with no animation, and the full-resolution file loads on
+  zoom. Tested in headless Chrome on 24 MP files; **feel on a real trackpad is unverified**.
+- **Rotation**: `[` and `]` or the inspector buttons. Stored per photo, never written to the
+  original, and the photo is re-analyzed after turning. **Not exported** to Lightroom yet.
+- **Auto-rotation** from faces (`analysis/orientation.py`). Tested on one real portrait saved
+  sideways at 90, 180 and 270 degrees. It only acts on photos with a clear face.
+- **Editing recoverability** (`scoring/recover.py`): a rule-of-thumb estimate, shown in the
+  inspector and as the "Fixable in editing" filter. **Not validated against real edits.**
+- **Motion**: click, Z and level changes ease to the new zoom in about 220 ms; drag, scroll and
+  pinch are never eased. Flags pop onto thumbnails, a short "Picked" / "Rejected" confirmation
+  shows in the loupe, and dialogs, toasts, view switches and score meters ease in. All of it is
+  off when the Mac's Reduce Motion setting is on. Measured in headless Chrome only.
+- **Topics and relevance** (`culler/topics/`): each photo gets a topic category for the shoot's
+  kind (General, Wedding, Portrait session, Event, Travel) and a 0-1 relevance meter; photos unlike
+  the rest of the shoot are flagged off-topic. Categories come from the vision model (CLIP) compared
+  with plain-English descriptions, nudged by the face count. Without CLIP, photos are grouped by
+  how many people are in them. Checked with the real model on 14 sample photos (travel and general
+  categories all sensible); **the wedding, event and portrait categories have not been tried on
+  real photos of those kinds**, and off-topic flagging is tested only on constructed data.
+- **Default vision model changed** to ViT-B-32-quickgelu / laion400m_e32: it is the one the topic
+  sorting was checked with, and it downloads from a second host if the first fails.
+- **`scripts/update.sh`** installs an update zip, rebuilds only what changed, and replaces the app
+  in /Applications. Written for macOS and **not run yet**.
+- Engine tests: 119.
+- Analyzer version is now 2, so shoots scanned earlier are re-analyzed on their next scan.
+
 ## First things to do on a Mac
 
 1. `./scripts/fetch_models.sh`, check the printed hash of `face_landmarker.task`, pin it in the script.

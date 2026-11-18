@@ -35,6 +35,27 @@ Choices made where the build spec was silent, or where it had to change. Newest 
 
 ## Other choices
 
+- **Topic categories are zero-shot**: no training, just CLIP similarity between a photo and a few
+  written descriptions per category (`topics/taxonomy.py`). Editing that file adds a category or a
+  kind of shoot. A photo that matches nothing with 40% confidence is "Other".
+- **Face counts nudge the category** because counting faces is more dependable than CLIP at telling
+  one person from a couple from a group.
+- **Relevance is "does the shoot contain other photos like this one"**: the average similarity to a
+  photo's nearest neighbours, ignoring its own burst, ranked within the shoot. Off-topic means far
+  below the shoot's typical value. It never rejects a photo; it is a filter.
+
+- **Rotation is degrees clockwise on top of the camera's orientation flag**, kept in the
+  database. Cached images are stored once per rotation. A rotation set by hand is never
+  overridden by auto-rotation.
+- **Auto-rotation needs a confident face** (score 0.85 or more after turning, and clearly better
+  than upright). Photos without faces are left alone rather than guessed at.
+- **Zoom percentages are image pixels per screen point**, so 100% on a Retina display shows one
+  image pixel across two physical pixels, the same as Lightroom.
+- **Full-size images for zoom**: an unrotated JPEG or PNG is served straight from the original;
+  RAW uses the camera's embedded full-size preview, not a developed RAW.
+- **Recoverability thresholds** (about 3.5 stops of shadow headroom for RAW, 2 for JPEG, less
+  at high ISO) are photographers' rules of thumb, not measurements of this camera.
+
 - **App name "Culler", bundle id `com.usmankhan.culler`.** Placeholders. Change in
   `app/src-tauri/tauri.conf.json` and `engine/culler/config.py` before the first release;
   the bundle id cannot change after people install it without losing their data folder.
@@ -52,5 +73,7 @@ Choices made where the build spec was silent, or where it had to change. Newest 
   was tested, and gives a browser version for free.
 - **Model files are not in git.** `scripts/fetch_models.sh` downloads them from OpenCV's and
   Google's official locations. The YuNet hash is pinned; the landmark model's is not yet.
+- **Dependencies use minimum versions, not exact pins**, so the engine installs on Python 3.11
+  to 3.13. The spec asked for pins; exact pins from one Python version broke installs on another.
 - **Thresholds are untuned defaults.** They were set on synthetic and sample images. Tune on
   the owner's benchmark shoots with `culler benchmark`.

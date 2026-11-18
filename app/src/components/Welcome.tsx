@@ -1,4 +1,4 @@
-import { chooseAndOpenFolder } from "../actions";
+import { chooseAndOpenFolder, chooseAndOpenPhotos } from "../actions";
 import { useStore } from "../store";
 
 export function Welcome() {
@@ -13,7 +13,8 @@ export function Welcome() {
           <li><strong>Export to Lightroom.</strong> Every decision you make teaches Culler your taste for the next shoot.</li>
         </ol>
         <div className="welcome-actions">
-          <button className="button button-primary button-large" onClick={() => void chooseAndOpenFolder()}>Open a folder of photos…</button>
+          <button className="button button-primary button-large" onClick={() => void chooseAndOpenFolder()}>Open a folder…</button>
+          <button className="button button-large" onClick={() => void chooseAndOpenPhotos()}>Select photos…</button>
           <button className="link" onClick={() => set({ dialog: "shortcuts" })}>Keyboard shortcuts</button>
         </div>
         <p className="muted small">Reads JPG, HEIC, PNG and RAW (CR3, CR2, NEF, ARW, RAF, DNG).</p>

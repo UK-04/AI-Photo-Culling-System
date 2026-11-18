@@ -85,16 +85,29 @@ class Repo:
         return current
 
     # ------------------------------------------------------------------ shoots
-    def add_shoot(self, folder_path: str, name: str | None = None) -> int:
+    def add_shoot(self, folder_path: str, name: str | None = None, only_files: list[str] | None = None) -> int:
+        """Register a folder as a shoot, or return the one already registered for it.
+
+        ``only_files`` limits the shoot to hand-picked files inside the folder. Opening
+        the folder itself (no ``only_files``) always means the whole folder; picking
+        more files later adds them to the ones picked before.
+        """
         folder_path = str(Path(folder_path).expanduser().resolve())
         with self.tx() as c:
-            row = c.execute("SELECT id FROM shoots WHERE folder_path = ?", (folder_path,)).fetchone()
+            row = c.execute("SELECT id, only_files, archived FROM shoots WHERE folder_path = ?", (folder_path,)).fetchone()
             if row:
-                c.execute("UPDATE shoots SET archived = 0 WHERE id = ?", (row["id"],))
+                if only_files is None:
+                    merged = None
+                elif row["only_files"] is None and not row["archived"]:
+                    merged = None  # already the whole folder: the picked files are in it
+                else:
+                    merged = json.dumps(sorted(set(json.loads(row["only_files"] or "[]")) | set(only_files)))
+                c.execute("UPDATE shoots SET archived = 0, only_files = ? WHERE id = ?", (merged, row["id"]))
                 return int(row["id"])
             cur = c.execute(
-                "INSERT INTO shoots (folder_path, name, created_at) VALUES (?, ?, ?)",
-                (folder_path, name or Path(folder_path).name, now_iso()),
+                "INSERT INTO shoots (folder_path, name, created_at, only_files) VALUES (?, ?, ?, ?)",
+                (folder_path, name or Path(folder_path).name, now_iso(),
+                 None if only_files is None else json.dumps(sorted(set(only_files)))),
             )
             return int(cur.lastrowid)
 
@@ -107,7 +120,7 @@ class Repo:
         return [dict(r) for r in rows]
 
     def update_shoot(self, shoot_id: int, **fields: Any) -> None:
-        allowed = {"name", "status", "photo_count", "finished_at", "archived"}
+        allowed = {"name", "status", "photo_count", "finished_at", "archived", "shoot_type"}
         sets = [k for k in fields if k in allowed]
         if not sets:
             return
@@ -149,7 +162,7 @@ class Repo:
     def pending_photos(self, shoot_id: int, analyzer_version: int) -> list[dict]:
         """Photos that still need ingest or analysis (new, failed, or analyzed by an older version)."""
         rows = self.conn().execute(
-            """SELECT p.id, p.path, p.companion_path FROM photos p
+            """SELECT p.id, p.path, p.companion_path, p.rotation, p.rotation_source FROM photos p
                LEFT JOIN analysis a ON a.photo_id = p.id
                WHERE p.shoot_id = ? AND p.status != 'missing'
                  AND (p.status != 'done' OR a.photo_id IS NULL OR a.analyzer_version != ?)
@@ -173,6 +186,7 @@ class Repo:
                 (me["shoot_id"], meta.get("file_hash"), photo_id),
             ).fetchone()
             if moved is not None:
+                c.execute("DELETE FROM topics WHERE photo_id = ?", (photo_id,))
                 c.execute("DELETE FROM photos WHERE id = ?", (photo_id,))
                 c.execute(
                     "UPDATE photos SET path = ?, companion_path = ? WHERE id = ?",
@@ -190,7 +204,25 @@ class Repo:
             )
             if embedding is not None:
                 c.execute("INSERT OR REPLACE INTO embeddings VALUES (?, ?, ?)", (photo_id, embedding[0], embedding[1]))
+            if meta.get("auto_rotation") is not None:  # never overrides a rotation the photographer set
+                c.execute(
+                    "UPDATE photos SET rotation = ?, rotation_source = 'auto' "
+                    "WHERE id = ? AND COALESCE(rotation_source, '') != 'user'",
+                    (int(meta["auto_rotation"]), photo_id),
+                )
         return photo_id
+
+    def set_rotation(self, photo_id: int, rotation: int) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE photos SET rotation = ?, rotation_source = 'user' WHERE id = ?", (rotation % 360, photo_id))
+
+    def update_analysis(self, photo_id: int, analysis: dict) -> None:
+        with self.tx() as c:
+            c.execute(
+                f"INSERT OR REPLACE INTO analysis (photo_id, {', '.join(_ANALYSIS_COLS)}) "
+                f"VALUES (?, {', '.join('?' for _ in _ANALYSIS_COLS)})",
+                [photo_id] + [analysis.get(k) for k in _ANALYSIS_COLS],
+            )
 
     def mark_error(self, photo_id: int, message: str) -> None:
         with self.tx() as c:
@@ -207,7 +239,8 @@ class Repo:
                       a.motion_anisotropy, a.exposure_mean, a.clip_high_pct, a.clip_low_pct, a.face_clip_high_pct,
                       a.face_count, a.eyes_closed_count, a.main_eyes_closed, a.main_eye_open, a.faces_json, a.face_backend,
                       s.rule_score, s.personal_score, s.final_score, s.label, s.confidence, s.reason_primary,
-                      s.reason_secondary, s.reason_codes, s.sharp_pct, s.model_version
+                      s.reason_secondary, s.reason_codes, s.sharp_pct, s.model_version,
+                      s.recover_score, s.recover_label, s.recover_note
                FROM photos p LEFT JOIN analysis a ON a.photo_id = p.id LEFT JOIN scores s ON s.photo_id = p.id
                WHERE p.id = ?""",
             (photo_id,),
@@ -215,6 +248,8 @@ class Repo:
         if row is None:
             return None
         out = dict(row)
+        if out.get("rotation") in (90, 270):
+            out["width"], out["height"] = out["height"], out["width"]
         out["faces"] = json.loads(out.pop("faces_json") or "[]")
         out["reason_codes"] = json.loads(out.get("reason_codes") or "[]")
         out["burst"] = None
@@ -265,6 +300,15 @@ class Repo:
                     [(cur.lastrowid, rank, pid) for rank, pid in enumerate(group)],
                 )
 
+    def replace_topics(self, shoot_id: int, rows: list[dict]) -> None:
+        """Store the topic category and relevance of every photo in a shoot."""
+        with self.tx() as c:
+            c.execute("DELETE FROM topics WHERE photo_id IN (SELECT id FROM photos WHERE shoot_id = ?)", (shoot_id,))
+            c.executemany(
+                "INSERT INTO topics (photo_id, category, category_confidence, relevance, off_topic, method) VALUES (?, ?, ?, ?, ?, ?)",
+                [(r["photo_id"], r["category"], r["confidence"], r["relevance"], int(r["off_topic"]), r["method"]) for r in rows],
+            )
+
     def burst_sizes(self, shoot_id: int) -> dict[int, int]:
         rows = self.conn().execute("SELECT id, photo_ids FROM bursts WHERE shoot_id = ?", (shoot_id,)).fetchall()
         return {int(r["id"]): len(json.loads(r["photo_ids"])) for r in rows}
@@ -277,7 +321,7 @@ class Repo:
     def analysis_rows(self, shoot_id: int) -> list[dict]:
         """Analysis joined with capture time and burst position, for bursts and scoring."""
         rows = self.conn().execute(
-            """SELECT p.id AS photo_id, p.path, p.capture_ts, p.burst_id, p.burst_rank, a.*
+            """SELECT p.id AS photo_id, p.path, p.capture_ts, p.burst_id, p.burst_rank, p.iso, a.*
                FROM photos p JOIN analysis a ON a.photo_id = p.id
                WHERE p.shoot_id = ? AND p.status = 'done' ORDER BY p.capture_ts, p.path""",
             (shoot_id,),
@@ -288,6 +332,7 @@ class Repo:
         cols = (
             "photo_id", "rule_score", "personal_score", "final_score", "label", "confidence",
             "reason_primary", "reason_secondary", "reason_codes", "sharp_pct", "model_version", "scored_at",
+            "recover_score", "recover_label", "recover_note",
         )
         stamp = now_iso()
         with self.tx() as c:
@@ -301,11 +346,14 @@ class Repo:
         sizes = self.burst_sizes(shoot_id)
         rows = self.conn().execute(
             """SELECT p.id, p.path, p.file_hash, p.captured_at, p.capture_ts, p.width, p.height,
-                      p.burst_id, p.burst_rank, p.user_label, p.user_rating, p.status, p.error,
+                      p.burst_id, p.burst_rank, p.user_label, p.user_rating, p.status, p.error, p.rotation,
                       s.label, s.confidence, s.final_score, s.rule_score, s.personal_score,
                       s.reason_primary, s.reason_secondary, s.sharp_pct,
-                      a.subject_sharpness, a.face_count
+                      s.recover_score, s.recover_label, s.recover_note,
+                      a.subject_sharpness, a.face_count,
+                      t.category, t.category_confidence, t.relevance, t.off_topic
                FROM photos p LEFT JOIN scores s ON s.photo_id = p.id LEFT JOIN analysis a ON a.photo_id = p.id
+               LEFT JOIN topics t ON t.photo_id = p.id
                WHERE p.shoot_id = ? AND p.status IN ('done', 'error')
                ORDER BY (p.status = 'error'), p.capture_ts, p.path""",
             (shoot_id,),
@@ -315,6 +363,8 @@ class Repo:
             d = dict(r)
             d["name"] = os.path.basename(d["path"])
             d["burst_size"] = sizes.get(d["burst_id"], 1) if d["burst_id"] else 1
+            if d["rotation"] in (90, 270):  # report the size as it is shown
+                d["width"], d["height"] = d["height"], d["width"]
             out.append(d)
         return out
 

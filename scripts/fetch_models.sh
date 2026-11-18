@@ -26,8 +26,7 @@ fetch "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/f
       "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
 
 # Eye state: MediaPipe Face Landmarker, from Google's model storage.
-# Its hash is not pinned yet: this file could not be downloaded in the build sandbox.
 fetch "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task" \
       "face_landmarker.task" \
-      ""
+      "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 echo "Models are in $DEST"

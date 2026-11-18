@@ -26,6 +26,14 @@ export interface Photo {
   reason_secondary: string | null;
   sharp_pct: number | null;
   face_count: number | null;
+  rotation: number;
+  recover_score: number | null;
+  recover_label: string | null;
+  recover_note: string | null;
+  category: string | null;
+  category_confidence: number | null;
+  relevance: number | null;
+  off_topic: number | null;
 }
 
 export interface Face {
@@ -82,6 +90,7 @@ export interface Shoot {
   name: string;
   folder_path: string;
   status: string;
+  shoot_type: string;
   photo_count: number;
   finished_at: string | null;
   counts: Counts;
@@ -104,6 +113,6 @@ export interface ModelStatus {
   training: { running: boolean; last: null | { status: string; message: string } };
 }
 
-export type Filter = "all" | "keep" | "review" | "reject" | "undecided" | "picked" | "rated3" | "teach";
+export type Filter = "all" | "keep" | "review" | "reject" | "undecided" | "picked" | "rated3" | "fixable" | "offtopic" | "teach";
 export type Sort = "time" | "score" | "sharpness";
 export type View = "grid" | "loupe" | "compare";

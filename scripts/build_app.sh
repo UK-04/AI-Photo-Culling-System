@@ -5,6 +5,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 [[ -d "$ROOT/app/src-tauri/binaries" ]] || "$ROOT/scripts/build_engine.sh"
+if ! "$ROOT/app/src-tauri/binaries/culler-engine-dist/culler-engine" --version; then
+  echo "The packaged engine does not start. Run ./scripts/build_engine.sh and fix its error first." >&2
+  exit 1
+fi
 
 if [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
   # Every Mach-O file inside the engine must be signed with the hardened runtime
@@ -24,5 +28,6 @@ fi
 
 cd "$ROOT/app"
 npm ci
-npm run tauri build -- --target aarch64-apple-darwin
+# Extra arguments are passed to "tauri build" (the release workflow adds its signing config).
+npm run tauri build -- --target aarch64-apple-darwin "$@"
 echo "Built: $ROOT/app/src-tauri/target/aarch64-apple-darwin/release/bundle/"

@@ -1,0 +1,1 @@
+Updates itself from now on. Adds topics, relevance, rotation, smooth zoom and editing estimates.

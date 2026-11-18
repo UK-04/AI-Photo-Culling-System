@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { chooseAndOpenFolder } from "./actions";
+import { chooseAndOpenFolder, chooseAndOpenPhotos } from "./actions";
 import { isTauri } from "./api";
 import { BottomBar } from "./components/BottomBar";
 import { Compare } from "./components/Compare";
@@ -10,7 +10,9 @@ import { Loupe } from "./components/Loupe";
 import { ShortcutsDialog } from "./components/ShortcutsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { Toolbar } from "./components/Toolbar";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { Welcome } from "./components/Welcome";
+import { stepZoomLevel } from "./logic";
 import { useStore } from "./store";
 
 function useKeyboard() {
@@ -36,7 +38,8 @@ function useKeyboard() {
           if (s.shootId !== null) s.set({ dialog: "export" });
         } else if (key === "o") {
           e.preventDefault();
-          void chooseAndOpenFolder();
+          if (e.shiftKey) void chooseAndOpenPhotos();
+          else void chooseAndOpenFolder();
         }
         return;
       }
@@ -60,6 +63,10 @@ function useKeyboard() {
           if (s.view !== "loupe") s.set({ view: "loupe", zoomed: true });
           else s.set({ zoomed: !s.zoomed });
           break;
+        case "[": void s.rotate(-90); break;
+        case "]": void s.rotate(90); break;
+        case "=": case "+": s.setZoomLevel(stepZoomLevel(s.zoomLevel, 1)); if (s.view === "loupe") s.set({ zoomed: true }); break;
+        case "-": case "_": s.setZoomLevel(stepZoomLevel(s.zoomLevel, -1)); break;
         case "c": case "C": s.setView(s.view === "compare" ? "grid" : "compare"); break;
         case "s": case "S": s.toggleBurst(); break;
         case "i": case "I": s.set({ inspectorOpen: !s.inspectorOpen }); break;
@@ -84,11 +91,13 @@ function useNativeMenu() {
         const s = useStore.getState();
         switch (event.payload) {
           case "open_folder": void chooseAndOpenFolder(); break;
+          case "open_photos": void chooseAndOpenPhotos(); break;
           case "export": if (s.shootId !== null) s.set({ dialog: "export" }); break;
           case "undo": s.undo(); break;
           case "redo": s.redo(); break;
           case "rescan": void s.rescan(); break;
           case "shortcuts": s.set({ dialog: "shortcuts" }); break;
+          case "check_updates": void s.checkUpdates(true); break;
           case "toggle_inspector": s.set({ inspectorOpen: !s.inspectorOpen }); break;
         }
       });
@@ -98,7 +107,7 @@ function useNativeMenu() {
 }
 
 export function App() {
-  const { connected, fatal, shootId, view, inspectorOpen, dialog, toast } = useStore();
+  const { connected, fatal, shootId, view, inspectorOpen, dialog, toast, hud } = useStore();
   useEffect(() => {
     void useStore.getState().init();
   }, []);
@@ -126,6 +135,7 @@ export function App() {
     <div className={`app${isTauri ? " in-shell" : ""}`}>
       <Sidebar />
       <main className="main">
+        <UpdateBanner />
         {shootId === null ? (
           <Welcome />
         ) : (
@@ -136,6 +146,7 @@ export function App() {
                 {view === "grid" && <Grid />}
                 {view === "loupe" && <Loupe />}
                 {view === "compare" && <Compare />}
+                {hud && view !== "grid" && <div key={hud.n} className={`hud hud-${hud.tone}`} aria-hidden>{hud.text}</div>}
               </div>
               {inspectorOpen && <Inspector />}
             </div>

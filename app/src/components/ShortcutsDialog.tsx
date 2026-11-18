@@ -7,13 +7,16 @@ const SHORTCUTS: [string, string][] = [
   ["1 – 5", "Star rating (0 clears)"],
   ["← →  ↑ ↓", "Move between photos"],
   ["Space", "Switch between grid and loupe"],
-  ["Z", "Zoom to 100% on the main face"],
+  ["Z or click", "Zoom in and out. Drag to move around"],
+  ["+  −", "Change how far Z and click zoom in"],
+  ["[  ]", "Rotate left, right"],
   ["C", "Compare the frames of a burst"],
   ["S", "Open or close a burst stack"],
   ["Tab", "Next photo that needs a decision"],
   ["I", "Show or hide the inspector"],
   ["⌘Z  ⇧⌘Z", "Undo, redo"],
   ["⌘O", "Open a folder"],
+  ["⇧⌘O", "Select photos"],
   ["⌘E", "Export"],
 ];
 
