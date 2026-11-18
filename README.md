@@ -1,10 +1,45 @@
 # Culler
 
-**[Download Culler for Mac](https://github.com/UK-04/AI-Photo-Culling-System/releases/latest/download/Culler.dmg)** (Apple Silicon, macOS 14 or later) · [Website](https://uk-04.github.io/AI-Photo-Culling-System/)
+**Cull a photo shoot in minutes, on your own Mac.**
 
-A Mac app that culls a photo shoot into KEEP / REVIEW / REJECT, says why, stacks bursts,
-and learns your taste from every decision. Everything runs on your Mac. Originals are
-never modified, moved or deleted.
+### [⬇ Download Culler for Mac](https://github.com/UK-04/AI-Photo-Culling-System/releases/latest/download/Culler.dmg)
+
+Free. Needs an Apple Silicon Mac (M1 or newer) with macOS 14 or later. The link always gives you the newest version.
+
+Culler goes through a shoot the way you would on a first pass. It sorts every photo into
+**Keep**, **Review** or **Reject**, tells you why in plain words, and lets you confirm or
+override each call with one key. Everything runs on your Mac: nothing is uploaded, and your
+original files are never changed, moved or deleted.
+
+## What it does
+
+- **Catches the misses.** Flags out-of-focus frames, camera shake, focus that landed on the
+  background, closed eyes, blown-out faces and accidental frames such as a lens cap left on.
+- **Stacks bursts.** Groups frames shot a split second apart into one stack, with the sharpest,
+  eyes-open frame on top. Click the number on a stack to see every frame.
+- **Sorts by topic.** Pick the kind of shoot (wedding, event, portrait session, travel or general)
+  and Culler groups photos into topics such as group photos, couple portraits, ceremony,
+  details or landmarks. Photos unlike the rest of the shoot are flagged as off-topic.
+- **Rates how fixable a photo is.** For underexposed, overexposed or slightly soft photos, it
+  estimates whether editing can save them, from "Easy fix" to "Not fixable".
+- **Learns your taste.** Every pick and reject teaches it. After about 300 decisions it starts
+  ranking new shoots the way you cull.
+- **Fast review.** P picks, X rejects, 1 to 5 sets stars, arrow keys move. Click to zoom to
+  100%, drag to look around, compare burst frames side by side, rotate with [ and ].
+- **Hands off to Lightroom.** Writes colour labels and stars into sidecar files Lightroom reads,
+  or copies your picks (optionally sorted into a folder per topic) to wherever you want them.
+- **Updates itself.** When a new version is out, Culler offers to install it and restart.
+
+## Installing
+
+1. Open the downloaded **Culler.dmg** and drag **Culler** into **Applications**.
+2. Open Culler. The first time, macOS says it cannot check the app: click **Done**.
+3. Open **System Settings → Privacy & Security**, scroll down, click **Open Anyway** next to
+   Culler, and confirm.
+
+You only do this once. Culler is not yet registered with Apple, which is why macOS asks.
+
+## For developers
 
 - `engine/`  Python: analysis, burst grouping, scoring, the personal model, exports, local API, CLI
 - `app/`     the interface (React) and the Mac shell (Tauri)
